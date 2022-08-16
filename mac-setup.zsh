@@ -320,29 +320,27 @@ SECRETS_FILE=".secrets.env.sample"
 
 ### 05. Download config settings file to \$HOME/mac-setup.env (away from GitHub)
 # See https://wilsonmar.github.io/mac-setup/#SaveConfigFile
+Fetch_Raw_From_GitHub(repo,f){
+   if [ ! -f "$PWD/$f" ]; then
+      h2 "Downloading $f to \$HOME folder"   
+        curl -LO "https://raw.githubusercontent.com/$repo/mac-setup/master/$f"
+   fi
+}
 if command -v curl ; then
-   pwd
-   if [ ! -f "$HOME/mac-setup.env" ]; then
-      h2 "Downloading mac-setup.env to \$HOME folder"
-      curl -LO "https://raw.githubusercontent.com/inean/mac-setup/master/mac-setup.env"
-      cp "$HOME/mac-setup.env" "$HOME"
-   fi
-   if [ ! -f "$HOME/.zshrc" ]; then
-      h2 "Downloading .zshrc to \$HOME folder"
-      curl -LO "https://raw.githubusercontent.com/inean/mac-setup/master/.zshrc"  # to
-      cp "$HOME/.zshrc" "$HOME"wi
-   fi
-   if [ ! -f "$HOME/mac-setup.zsh" ]; then
-      h2 "Downloading mac-setup.zsh to \$HOME folder"
-      curl -LO "https://raw.githubusercontent.com/inean/mac-setup/master/mac-setup.zsh"
-      cp "$HOME/mac-setup.zsh" "$HOME"
+   pwd 
+   for f in ("mac-setup.env" ".zshrc"); do
+      if [ ! -f "$HOME/$f" ]; then
+         Fetch_Raw_From_Github("inean", $f)
+         cp "$PWD/$f" "$HOME"
+      fi
+   done
+   # Fetch script but only if not locally available
+   if [ ! -f "$PWD/mac-setup.zsh" ]; then   
+      Fetch_Raw_From_Github("inean", "mac-setup.zsh")
    fi
 fi
-if [ -f "$HOME/mac-setup.env" ]; then
-   h2 "Loading \$HOME/mac-setup.env ..."
-   source "$HOME/mac-setup.env"
-fi
-
+h2 "Loading \$PWD/mac-setup.env ..."
+source "$PWD/mac-setup.env"
 
 Input_GitHub_User_Info(){
       # https://www.zshellcheck.net/wiki/SC2162: read without -r will mangle backslashes.
