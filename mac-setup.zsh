@@ -1,42 +1,90 @@
 #!/usr/bin/env zsh
-# This is mac-setup.zsh based on template from https://github.com/wilsonmar/mac-setup/blob/master/mac-setup.zsh
-# Coding of this shell script is explained in https://wilsonmar.github.io/mac-setup
-# Coding of shell scripting is explained in https://wilsonmar.github.io/shell-scripts
-
-# shellcheck does not work on zsh, but 
-# shellcheck disable=SC2001 # See if you can use ${variable//search/replace} instead.
-# shellcheck disable=SC1090 # Can't follow non-constant source. Use a directive to specify location.
-# shellcheck disable=SC2129  # Consider using { cmd1; cmd2; } >> file instead of individual redirects.
+set -euo pipefail
 
 # After you obtain a Terminal (console) in your environment,
 # cd to folder, copy this line (without the # comment character) and paste in the terminal so
 # it installs utilities:
 # zsh -c "$(curl -fsSL https://raw.githubusercontent.com/inean/mac-setup/master/mac-setup.zsh)" -v
 
-# This downloads and installs all the utilities, then invokes programs to prove they work
-# This was run on macOS Mojave and Ubuntu 16.04.
-
 ### 01. Capture time stamps to later calculate how long the script runs, no matter how it ends:
 # See https://wilsonmar.github.io/mac-setup/#StartingTimes
-THIS_PROGRAM="$0"
-SCRIPT_VERSION="v0.90"  # Add exa
-LOG_DATETIME=$( date +%Y-%m-%dT%H:%M:%S%z)-$((1 + RANDOM % 1000))
-# clear  # screen (but not history)
-echo "=========================== ${LOG_DATETIME} ${THIS_PROGRAM} ${SCRIPT_VERSION}"
-EPOCH_START="$( date -u +%s )"  # such as 1572634619
 
+SCRIPT_PROGRAM="${0##*/}"
+SCRIPT_VERSION="0.91"
+SCRIPT_ARGS=""
+
+SCRIPT_START="$( date -u +%s )"  # epoch such as 1572634619
+LOG_DATETIME=$( date +%Y-%m-%dT%H:%M:%S%z)-$((1 + RANDOM % 1000))
+echo "=========================== ${LOG_DATETIME} ${SCRIPT_PROGRAM} v${SCRIPT_VERSION}"
+
+### 09. Set traps to display information if script is interrupted.
+# See https://wilsonmar.github.io/mac-setup/#SetTraps
+# See https://github.com/MikeMcQuaid/strap/blob/master/bin/strap.zsh
+trap on_exit EXIT INT QUIT TERM
+
+# shellcheck disable=SC2119
+tempfiles="$(mktemp)"
+MKTEMP_BIN="$(which mktemp)"
+
+function mktemp(){
+	local filename="$($MKTEMP_BIN "${@}")"
+	echo "$filename" >> "$tempfiles"
+	echo "$filename"
+}
+function on_exit() {
+	test -f "$tempfiles" && {
+		#echo "starting on_exit cleanup"
+		while read file; do
+			#echo removing $file
+			test -f "$file" && rm -f "$file"
+		done < "$tempfiles"
+		#echo "removing $tempfiles (tempfile list)"
+		test -f "$tempfiles" && rm -f "$tempfiles"
+	}
+   SCRIPT_END=$(date -u +%s);
+   EPOCH_DIFF=$((SCRIPT_END-SCRIPT_START))
+   sudo --reset-timestamp  # prompt for password for sudo session
+   MSG="End of script '$SCRIPT_PROGRAM' v$SCRIPT_VERSION after $((EPOCH_DIFF/360)) seconds."
+   success "$MSG"
+}
+
+# this messages can't be suppressed
+function info() {   # output on every run
+   printf "\e[2m\n➜ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
+}
+function success() {
+   printf "\e[32m\e[1m✔ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
+}
+function warning() {  # &#9758; or &#9755;
+   printf "\e[5m\e[36m\e[1m☞ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
+}
+function error() {    # &#9747;
+   printf "\n\e[31m\e[1m✖ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
+   return 1
+}
+function fatal() {   # Skull: &#9760;  # Star: &starf; &#9733; U+02606  # Toxic: &#9762;
+   printf "\n\e[31m\e[1m☢  %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
+   return 1
+}
+# shellcheck disable=SC2120
+function abort() {
+   # Function: Exit with error.
+   fatal "${*:-"Exiting abnormally"}"
+   exit 1
+}
 
 ### 02. Display a menu if no parameter is specified in the command line
 # See https://wilsonmar.github.io/mac-setup/#Args
 # See https://wilsonmar.github.io/mac-setup/#EchoFunctions
-args_prompt() {
+function args_prompt() {
    echo "OPTIONS:"
-   echo "   -cont         continue (NOT stop) on error"
+   echo "   -k            continue (NOT stop) on error"
    echo "   -v            run -verbose (list space use and each image to console)"
    echo "   -vv           run -very verbose diagnostics"
    echo "   -x            set -x to trace command lines"
-#  echo "   -x            set sudoers -e to stop on error"
-   echo "   -q           -quiet headings for each step"
+   echo "   -q            quiet headings for each step"
+   echo "   -dry-run      Actually don't change anything"
+
    echo " "
    echo "   -I           -Install brew utilities, apps"
    echo "   -U           -Upgrade installed packages if already installed"
@@ -73,7 +121,7 @@ args_prompt() {
    echo "   -u           -update GitHub (scan for secrets)"
    echo " "
    echo "   -podman       Install and use Podman (instead of Docker)"
-   echo "   -k            Install and use Docker"
+   echo "   -docker       Install and use Docker"
    echo "   -b           -build Docker image"
    echo "   -dps \"dev1\"   override default name of a docker process"
    echo "   -dc           use docker-compose.yml file"
@@ -104,11 +152,11 @@ args_prompt() {
    echo "   -M           remove Docker iMages pulled from DockerHub (to save disk space)"
    echo "# USAGE EXAMPLES:"
    echo "chmod +x mac-setup.zsh   # change permissions"
-   echo "# Using default configuration settings downloaed to \$HOME/mac-setup.env "
+   echo "# Using default configuration settings downloaded to \$HOME/mac-setup.env "
    echo "./mac-setup.zsh -v -I -U -Golang  # Install brew, plus golang"
-   echo "./mac-setup.zsh -v -Consul -k -a -K   # Use HashicorpVault in Docker for localhost Kept alive"
+   echo "./mac-setup.zsh -v -Consul -docker -a -K   # Use HashicorpVault in Docker for localhost Kept alive"
    echo "./mac-setup.zsh -v -Consul -podman -a -K   # Use HashicorpVault in Podman for localhost Kept alive"
-   echo "./mac-setup.zsh -v -k -HV -a -K   # Use HashicorpVault in Docker for localhost Kept alive"
+   echo "./mac-setup.zsh -v -docker -HV -a -K   # Use HashicorpVault in Docker for localhost Kept alive"
    echo "./mac-setup.zsh -v -HV -m -ts     # Use HashicorpVault -testserver"
    echo "./mac-setup.zsh -v -HV -s -ts     # Initiate Vault testserver"
    echo " "
@@ -123,138 +171,153 @@ args_prompt() {
    echo "./mac-setup.zsh -v -I -U -c -s -y -r -a -aws   # Python Flask web app in Docker"
    echo " "
    echo "./mac-setup.zsh -v -n -a     # NodeJs app with MongoDB"
-   echo "./mac-setup.zsh -v -ruby -o  # Ruby app"   
+   echo "./mac-setup.zsh -v -ruby -o  # Ruby app"
    echo "./mac-setup.zsh -v -venv -c -circleci -s    # Use CircLeci based on secrets"
    echo "./mac-setup.zsh -v -s -eggplant -k -a -console -dc -K -D  # eggplant use docker-compose of selenium-hub images"
-}  # args_prompt()
-
-# TODO: https://github.com/hashicorp/docker-consul/ to create a prod image from Dockerfile (for security)
-
+}
 if [ $# -eq 0 ]; then  # display if no parameters are provided:
    args_prompt
-   exit 1
+   exit 0
 fi
-exit_abnormal() {            # Function: Exit with error.
-  echo "exiting abnormally"
-  #args_prompt
-  exit 1
-}
 
 ### 03. Custom functions to echo text to screen
 # See https://wilsonmar.github.io/mac-setup/#TextColors
 # \e ANSI color variables are defined in https://wilsonmar.github.io/bash-scripts#TextColors
-h2() { if [ "${RUN_QUIET}" = false ]; then    # heading
-   printf "\n\e[1m\e[33m\u2665 %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
+RUN_QUIET=false              # -q
+RUN_VERBOSE=false            # -v
+RUN_DEBUG=false              # -vv
+RUN_DRY=false                # -dry-run
+
+function header() {
+   if [ "${RUN_QUIET}" = false ]; then    # heading
+      printf "\n\e[1m\e[33m\u2665 %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
    fi
 }
-info() {   # output on every run
-   printf "\e[2m\n➜ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
-}
-note() { if [ "${RUN_VERBOSE}" = true ]; then
+function note() { if [ "${RUN_VERBOSE}" = true ]; then
    printf "\n\e[1m\e[36m \e[0m \e[36m%s\e[0m" "$(echo "$@" | sed '/./,$!d')"
    printf "\n"
    fi
 }
-success() {
-   printf "\n\e[32m\e[1m✔ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
-}
-error() {    # &#9747;
-   printf "\n\e[31m\e[1m✖ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
-}
-warning() {  # &#9758; or &#9755;
-   printf "\n\e[5m\e[36m\e[1m☞ %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
-}
-fatal() {   # Skull: &#9760;  # Star: &starf; &#9733; U+02606  # Toxic: &#9762;
-   printf "\n\e[31m\e[1m☢  %s\e[0m\n" "$(echo "$@" | sed '/./,$!d')"
-}
 
-if [ "${RUN_DEBUG}" = true ]; then  # -vv
-   h2 "Header here"
-   info "info"
-   note "note"
-   success "success!"
-   error "error"
-   warning "warning (warnNotice)"
-   fatal "fatal (warnError)"
+### 04. Define variables and parse variables that modifies behavior of this script.
+# See https://wilsonmar.github.io/mac-setup/#FeatureFlags
+SET_CONTINUE_ON_ERROR=false  # -k
+SET_TRACE=false              # -x
+
+DOTENV_USE=true              # -env "alt-mac-setup.env"
+DOTENV_PATH="$HOME/mac-setup.env"
+
+### 06. Set variables dynamically based on each parameter flag
+# See https://wilsonmar.github.io/mac-setup/#VariablesSet
+while test $# -gt 0; do
+   case "$1" in
+        -x)
+         export SET_TRACE=true
+         shift
+         ;;
+      -k)
+         export SET_CONTINUE_ON_ERROR=true
+         shift
+         ;;
+      -env*)
+         export DOTENV_USE=true
+         shift
+         # Only define custom path if provided by command line
+         if [ -v 1 ] && [[ "$1" != -* ]]; then
+            # shellcheck disable=SC2001
+            DOTENV_CUSTOM_PATH=$( echo "$1" | sed -e 's/^[^=]*=//g' )
+            export DOTENV_CUSTOM_PATH
+            shift
+         fi
+         ;;
+      -nenv)
+         export DOTENV_USE=false
+         shift
+         ;;
+      -q)
+         export RUN_QUIET=true
+         shift
+         ;;
+      -vv)
+         export RUN_DEBUG=true
+         shift
+         ;;
+      -v)
+         export RUN_VERBOSE=true
+         shift
+         ;;
+      -dry-run)
+         export RUN_DRY=true
+         shift
+         ;;
+      *)
+         SCRIPT_ARGS="$SCRIPT_ARGS $1"
+         shift
+         ;;
+  esac
+done
+
+### 10. Set Continue on Error and Trace
+# See https://wilsonmar.github.io/mac-setup/#StrictMode
+if [ ${SET_TRACE} = true ]; then
+   header "Set -x ..."
+   set -x  # (-o xtrace) to show commands for specific issues.
+fi
+if [ ${SET_CONTINUE_ON_ERROR} = true ]; then  # -cont
+   warning "Set to continue despite error ..."
+   set +eo pipefail
 fi
 
 
-### 04. Define variables for use as "feature flags"
-# See https://wilsonmar.github.io/mac-setup/#FeatureFlags
-# Normal:
-   CONTINUE_ON_ERR=false        # -cont
+OPEN_CONSOLE=false           # -console
+CONVERT_TO_ZSH=false         # -zsh
+USE_TEST_SERVER=false        # -ts
 
-   RUN_ACTUAL=false             # -a  (dry run is default)
-   RUN_DEBUG=false              # -vv
-   RUN_PARMS=""                 # -P
-   RUN_VERBOSE=false            # -v
-
-   CONVERT_TO_ZSH=false         # -zsh
-   SET_TRACE=false              # -x
-
-   OPEN_CONSOLE=false           # -console
-   USE_TEST_SERVER=false        # -ts
-   USE_PROD_ENV=false           # -prod
-
-USE_CONFIG_FILE=false            # -nenv
-
-# To be overridden by values defined within:
-CONFIG_FILEPATH="$HOME/mac-setup.env"  # -env "alt-mac-setup.env"
-   # Contents of ~/mac-setup.env overrides these defaults:
+# Contents of ~/mac-setup.env overrides these defaults:
    PROJECTS_CONTAINER_PATH="$HOME/Projects"  # -P
    PROJECT_FOLDER_NAME="webgoat"
    PROJECT_NAME=""                           # -p
 
-   GITHUB_PATH="$HOME/github-inean"
-   GITHUB_REPO="inean.github.io"
-   GITHUB_ACCOUNT="inean"
+   GITHUB_USER_ACCOUNT="inean"
    GITHUB_USER_NAME="Wilson Mar"             # -n
    GITHUB_USER_EMAIL="wilson_mar@gmail.com"  # -e
 
-   GIT_ID="inean@gmail.com"
-   GIT_EMAIL="inean+GitHub@gmail.com"
-   GIT_NAME="Carlos Martín"
-   GIT_USERNAME="inean"
-
    GITHUB_REPO_URL="https://github.com/wilsonmar/WebGoat.git"
-   GITHUB_FOLDER=""
+   # GITHUB_FOLDER=""
    GITHUB_BRANCH=""             # -gcb
 
    CLONE_GITHUB=false           # -c
 
-# Different for each app:
+   # Different for each app:
    MY_FOLDER=""                 # -F folder
    MY_FILE=""
-     #MY_FILE="2-3.ipynb"
    APP1_HOST="127.0.0.1"   # default
    APP1_PORT="8200"        # default
    APP1_FOLDER=""          # custom specified
    OPEN_APP=false               # -o
 
 # From secrets file:
-SECRETS_FILE=".secrets.env.sample"
+   SECRETS_FILE=".secrets.env.sample"
    #   AWS_ACCESS_KEY_ID=""
    #   AWS_SECRET_ACCESS_KEY=""
    #   AWS_USER_ARN=""
    #   AWS_MFA_ARN=""
-      AWS_DEFAULT_REGION="us-east-2"
-      EKS_CLUSTER_NAME="sample-k8s"
-      EKS_KEY_FILE_PREFIX="eksctl-1"
-      EKS_NODES="2"
-      EKS_NODE_TYPE="m5.large"
+   AWS_DEFAULT_REGION="us-east-2"
+   EKS_CLUSTER_NAME="sample-k8s"
+   EKS_KEY_FILE_PREFIX="eksctl-1"
+   EKS_NODES="2"
+   EKS_NODE_TYPE="m5.large"
 
    USE_ENVOY=false              # -Envoy
    USE_DOORMAT=false            # -Doormat
-   USE RUN_CONSUL=false         # -Consul
    USE_VAULT=false              # -HV
-       VAULT_HOST="localhost"  # default value
-      #VAULT_ADDR="https://${VAULT_HOST}:8200"  # assembled in code below.
-       VAULT_USER_TOKEN=""
-       VAULT_USERNAME=""
-       VAULT_RSA_FILENAME=""
-       VAULT_CA_KEY_FULLPATH="$HOME/.ssh/ca_key"
-       VAULT_PUT=false          # -hvput  # by app program
-       VAULT_VERSION=""  # captured later by vault --version
+   VAULT_HOST="localhost"  # default value
+   #VAULT_ADDR="https://${VAULT_HOST}:8200"  # assembled in code below.
+   VAULT_USER_TOKEN=""
+   VAULT_USERNAME=""
+   VAULT_CA_KEY_FULLPATH="$HOME/.ssh/ca_key"
+   VAULT_PUT=false          # -hvput  # by app program
+   VAULT_VERSION=""  # captured later by vault --version
 
 # Cloud:
    RUN_VIRTUALENV=false         # -venv
@@ -262,9 +325,8 @@ SECRETS_FILE=".secrets.env.sample"
    RUN_PYTHON=false             # -python
    RUN_GOLANG=false             # -Golang
    RUN_EKS=false                # -eks
-       EKS_CRED_IS_LOCAL=true
+   EKS_CRED_IS_LOCAL=true
    RUN_EGGPLANT=false           # -eggplant
-   RUN_QUIET=false              # -q
    RUN_TENSORFLOW=false         # -tsf
    RUN_TERRAFORM=false          # -tf
    RUN_WEBGOAT=false            # -W
@@ -274,7 +336,7 @@ SECRETS_FILE=".secrets.env.sample"
    UPDATE_GITHUB=false          # -u
    UPDATE_PKGS=false            # -U
 
-   USE_DOCKER=false             # -k
+   USE_DOCKER=false             # -docker
    USE_PODMAN=false             # -podman
 
    USE_CIRCLECI=false           # -circleci
@@ -287,11 +349,11 @@ SECRETS_FILE=".secrets.env.sample"
    USE_K8S=false                # -k8s
    USE_AZURE_CLOUD=false        # -z
    USE_GOOGLE_CLOUD=false       # -g
-       GOOGLE_API_KEY=""  # manually copied from APIs & services > Credentials
+   GOOGLE_API_KEY=""  # manually copied from APIs & services > Credentials
 
    MOVE_SECURELY=false          # -m
-      LOCAL_SSH_KEYFILE=""
-      GITHUB_ORG=""
+   LOCAL_SSH_KEYFILE=""
+   GITHUB_ORG=""
 
    RUBY_INSTALL=false           # -ruby
    NODE_INSTALL=false           # -js
@@ -302,7 +364,7 @@ SECRETS_FILE=".secrets.env.sample"
    IMAGE_SD_CARD=false          # -sd
 
 # Pre-processing:
-   USE_QEMU                     # -qemu
+   USE_QEMU=false               # -qemu
    RESTART_DOCKER=false         # -r
    DOCKER_IMAGE_FILE=""  # custom specified
    DOCKER_PS_NAME="dev1"        # -dps
@@ -320,81 +382,98 @@ SECRETS_FILE=".secrets.env.sample"
 
 ### 05. Download config settings file to \$HOME/mac-setup.env (away from GitHub)
 # See https://wilsonmar.github.io/mac-setup/#SaveConfigFile
-Fetch_Raw_From_GitHub(repo,f){
-   if [ ! -f "$PWD/$f" ]; then
-      h2 "Downloading $f to \$HOME folder"   
-        curl -LO "https://raw.githubusercontent.com/$repo/mac-setup/master/$f"
+function github_get_content(){
+   [ -v 1 ] || abort "repo must be specified."
+   local repo=$1
+   [ -v 2 ] || abort "filenane must be specified."
+   local whre=$2
+   local file=${2##*/}
+
+   # shellcheck disable=SC2086
+   if [ "$file" = ${2%/*} ]; then
+      # If no path provided, check on pwd
+      whre="$PWD/$file"
    fi
+   if [ ! -f "$whre" ]; then
+      local tmpfile
+      tmpfile=$( mktemp "/tmp/${file}.XXXXXX" )
+      if [ -f "$tmpfile" ]; then
+         header "Downloading $file to ${whre%/*} folder"
+         curl -L "https://raw.githubusercontent.com/$repo/mac-setup/master/$file" -o "$tmpfile"
+         mv "$tmpfile" "$whre"
+      fi
+   fi
+   echo "$whre"
 }
-if command -v curl ; then
-   pwd 
-   for f in ("mac-setup.env" ".zshrc"); do
+function github_get_userinfo(){
+      # https://www.zshellcheck.net/wiki/SC2162: read without -r will mangle backslashes.
+      if [ -z "$GITHUB_USER_NAME" ]; then
+         read -r -p "Enter your GitHub user name [John Doe]: " GITHUB_USER_NAME
+         export GITHUB_USER_NAME=${GITHUB_USER_NAME:-"John Doe"}
+      fi
+      if [ -z "$GITHUB_USER_ACCOUNT" ]; then
+         read -r -p "Enter your GitHub user acount [john-doe]: " GITHUB_USER_ACCOUNT
+         export GITHUB_USER_ACCOUNT=${GITHUB_USER_ACCOUNT:-"john-doe"}
+      fi
+      if [ -z "$GITHUB_USER_EMAIL" ]; then
+         read -r -p "Enter your GitHub user email [john_doe@gmail.com]: " GITHUB_USER_EMAIL
+         export GITHUB_USER_EMAIL=${GITHUB_USER_EMAIL:-"john_doe@gmail.com"}
+      fi
+}
+function dotenv_pull() {
+   command -v curl || exit 1
+   pwd
+   declare -a files=("mac-setup.env" ".zshrc")
+   for f in "${files[@]}"
+   do
       if [ ! -f "$HOME/$f" ]; then
-         Fetch_Raw_From_Github("inean", $f)
-         cp "$PWD/$f" "$HOME"
+         github_get_content "$GITHUB_USER_ACCOUNT" "$HOME/$f"
       fi
    done
-   # Fetch script but only if not locally available
-   if [ ! -f "$PWD/mac-setup.zsh" ]; then   
-      Fetch_Raw_From_Github("inean", "mac-setup.zsh")
-   fi
-fi
-h2 "Loading \$PWD/mac-setup.env ..."
-source "$PWD/mac-setup.env"
-
-Input_GitHub_User_Info(){
-      # https://www.zshellcheck.net/wiki/SC2162: read without -r will mangle backslashes.
-      read -r -p "Enter your GitHub user name [John Doe]: " GITHUB_USER_NAME
-      GITHUB_USER_NAME=${GITHUB_USER_NAME:-"John Doe"}
-      GitHub_ACCOUNT=${GitHub_ACCOUNT:-"john-doe"}
-
-      read -r -p "Enter your GitHub user email [john_doe@gmail.com]: " GITHUB_USER_EMAIL
-      GITHUB_USER_EMAIL=${GITHUB_USER_EMAIL:-"johb_doe@gmail.com"}
 }
-if [ "${USE_CONFIG_FILE}" = true ]; then  # -nenv
-   warning "Using default values hard-coded in this bash script ..."
-   # PIPENV_DOTENV_LOCATION=/path/to/.env or =1 to not load.
-else  # use .mck-setup.env file:
-   # See https://pipenv-fork.readthedocs.io/en/latest/advanced.html#automatic-loading-of-env
-   if [ ! -f "$CONFIG_FILEPATH" ]; then   # file NOT found, then copy from github:
-      curl -s -O https://raw.GitHubusercontent.com/inean/mac-setup/master/mac-setup.env
-      warning "Downloading default config file mac-setup.env file to $HOME ... "
-      if [ ! -f "$CONFIG_FILEPATH" ]; then   # file still NOT found
+function dotenv_parse {
+   readonly dotenv_file=
+   header "Loading $dotenv_file ..."
+   # shellcheck disable=SC1090
+   source "$dotenv_file"
+   if [ -z "$GITHUB_USER_ACCOUNT" ]; then
+      fatal "GITHUB_USER_ACCOUNT variable not defined ..."
+      exit 9
+   fi
+}
+
+if [ "${DOTENV_USE}" = true ]; then
+   # When download from github, enforce user to update dotEnv bars to update to it needs
+
+   # check for variablre existence in zsh
+   if [ -v DOTENV_CUSTOM_PATH ]; then
+      if [ ! -f "$DOTENV_CUSTOM_PATH" ]; then
+         error "dotEnv '$DOTENV_CUSTOM_PATH' not found."
+      fi
+      # Override default path with command line provided one
+      DOTENV_PATH=$DOTENV_CUSTOM_PATH
+   fi
+   if [ ! -f "$DOTENV_PATH" ]; then
+      # file NOT found, then copy from github:
+      github_get_userinfo
+      github_get_content "$GITHUB_USER_ACCOUNT" "${DOTENV_PATH}"
+      if [ ! -f "$DOTENV_PATH" ]; then   # file still NOT found
          fatal "File mac-setup.env not found after download ..."
          exit 9
       fi
-      note "Please edit values in file $HOME/mac-setup.env and run this again ..."
+      note "Please edit values in '$DOTENV_PATH' and run this again ..."
       exit 9
-   else  # Read from default file name mac-setup.env :
-      h2 "Reading default config file $HOME/mac-setup.env ..."
-      note "$(ls -al "${CONFIG_FILEPATH}" )"
-      chmod +x "${CONFIG_FILEPATH}"
-      source   "${CONFIG_FILEPATH}"  # run file containing variable definitions.
-      if [ ! -n "$GITHUB_ACCOUNT" ]; then
-         fatal "GITHUB_ACCOUNT variable not defined ..."
-         exit 9
-      fi
-      #if [ "${CIRCLECI_API_TOKEN}" = "xxx" ]; then 
-      #   fatal "Please edit CIRCLECI_API_TOKEN in file \$HOME/.secrets.zsh and run again ..."
-      #   exit 9
-      #fi
-      # VPN_GATEWAY_IP & user cert
    fi
-
-   # TODO: Capture password manual input once for multiple shares 
-   # (without saving password like expect command) https://www.linuxcloudvps.com/blog/how-to-automate-shell-scripts-with-expect-command/
-      # From https://askubuntu.com/a/711591
-   #   read -p "Password: " -s szPassword
-   #   printf "%s\n" "$szPassword" | sudo --stdin mount \
-   #      -t cifs //192.168.1.1/home /media/$USER/home \
-   #      -o username=$USER,password="$szPassword"
-
-fi  # if [ "${USE_CONFIG_FILE}" = false ]; then  # -s
-
+   # Reached this point, a valid dotENV is up
+   header "Reading default config file $DOTENV_PATH ..."
+   dotenv_parse "$DOTENV_PATH"
+else
+   warning "Using default values hard-coded in this bash script ..."
+fi
 
 ### 06. Set variables dynamically based on each parameter flag
 # See https://wilsonmar.github.io/mac-setup/#VariablesSet
-while test $# -gt 0; do
+while test "$SCRIPT_ARGS" -gt 0; do
   case "$1" in
     -a)
       export RUN_ACTUAL=true
@@ -430,12 +509,8 @@ while test $# -gt 0; do
          # https://github.com/hashicorp/docker-consul
       # When -tf set:
       GITHUB_REPO_URL="git@github.com:hashicorp/learn-consul-terraform.git"
-      GITHUB_FOLDER="datacenter-deploy-ecs-hcp"
+      # GITHUB_FOLDER="datacenter-deploy-ecs-hcp"
       GITHUB_BRANCH="v0.5"             # -gcb
-      shift
-      ;;
-    -cont)
-      export CONTINUE_ON_ERR=true
       shift
       ;;
     -c)
@@ -487,20 +562,9 @@ while test $# -gt 0; do
       APP1_PORT="80"
       shift
       ;;
-    -env*)
-      export USE_CONFIG_FILE=true
-      shift
-             CONFIG_FILEPATH=$( echo "$1" | sed -e 's/^[^=]*=//g' )
-      export CONFIG_FILEPATH
-      shift
-      ;;
     -e*)
       shift
       GITHUB_USER_EMAIL=$( echo "$1" | sed -e 's/^[^=]*=//g' )
-      shift
-      ;;
-    -E)
-      export CONTINUE_ON_ERR=true
       shift
       ;;
     -f*)
@@ -544,7 +608,7 @@ while test $# -gt 0; do
       export GITHUB_REPO_URL="https://github.com/nickjj/build-a-saas-app-with-flask.git"
       export PROJECT_FOLDER_NAME="bsawf"
       #DOCKER_DB_NANE="snakeeyes-postgres"
-      #DOCKER_WEB_SVC_NAME="snakeeyes_worker_1"  # from docker-compose ps  
+      #DOCKER_WEB_SVC_NAME="snakeeyes_worker_1"  # from docker-compose ps
       APPNAME="snakeeyes"
       shift
       ;;
@@ -560,7 +624,7 @@ while test $# -gt 0; do
       MONGO_DB_NAME="delicious"
       shift
       ;;
-    -k)
+    -docker)
       export USE_DOCKER=true
       shift
       ;;
@@ -584,10 +648,6 @@ while test $# -gt 0; do
       ;;
     -M)
       export REMOVE_DOCKER_IMAGES=true
-      shift
-      ;;
-    -nenv)
-      export USE_CONFIG_FILE=false
       shift
       ;;
     -n*)
@@ -643,10 +703,6 @@ while test $# -gt 0; do
       # https://wiki.qemu.org/Hosts/Mac
       shift
       ;;
-    -q)
-      export RUN_QUIET=true
-      shift
-      ;;
     -r)
       export RESTART_DOCKER=true
       shift
@@ -690,20 +746,8 @@ while test $# -gt 0; do
       export UPDATE_PKGS=true
       shift
       ;;
-    -vv)
-      export RUN_DEBUG=true
-      shift
-      ;;
     -venv)
       export RUN_VIRTUALENV=true
-      shift
-      ;;
-    -v)
-      export RUN_VERBOSE=true
-      shift
-      ;;
-    -x)
-      export SET_TRACE=true
       shift
       ;;
     -w)
@@ -747,21 +791,29 @@ while test $# -gt 0; do
 done
 
 
-### 07. Display run variables 
+### 07. Display run variables
 # See https://inean.github.io/mac-setup/#DisplayRunVars
+if [ "${RUN_DEBUG}" = true ]; then  # -vv
+   header "Header here"
+   info "info"
+   note "note"
+   success "success!"
+   error "error"
+   warning "warning (warnNotice)"
+   fatal "fatal (warnError)"
+fi
 if [ "${RUN_VERBOSE}" = true ]; then
    note "GITHUB_USER_NAME=" "${GITHUB_USER_NAME}"
    note "GITHUB_USER_ACCOUNT=" "${GITHUB_USER_ACCOUNT}"
    note "GITHUB_USER_EMAIL=" "${GITHUB_USER_EMAIL}"
-
    note "AWS_DEFAULT_REGION= " "${AWS_DEFAULT_REGION}"
 fi
 
 # TODO: print all command arguments submitted:
-#while (( "$#" )); do 
-#  echo $1 
-#  shift 
-#done 
+#while (( "$#" )); do
+#  echo $1
+#  shift
+#done
 
 
 ### 08. Obtain and show information about the operating system in use to define which package manager to use
@@ -810,63 +862,23 @@ elif [ "${OS_TYPE}" = "Linux" ]; then  # it's NOT on a Mac:
       error "Linux distribution not anticipated. Please update script. Aborting."
       exit 0
    fi
-else 
+else
    error "Operating system not anticipated. Please update script. Aborting."
    exit 0
 fi
 # note "OS_DETAILS=$OS_DETAILS"
 
 
-### 09. Set traps to display information if script is interrupted.
-# See https://wilsonmar.github.io/mac-setup/#SetTraps
-# See https://github.com/MikeMcQuaid/strap/blob/master/bin/strap.zsh
-trap this_ending EXIT
-trap this_ending INT QUIT TERM
-this_ending() {
-   EPOCH_END=$(date -u +%s);
-   EPOCH_DIFF=$((EPOCH_END-EPOCH_START))
-   sudo --reset-timestamp  # prompt for password for sudo session
-   # Using BASH_VERSION identified above:
-   if [ "${BASH_VERSION}" -lt "4" ]; then
-      FREE_DISKBLOCKS_END="0"
-   else
-      FREE_DISKBLOCKS_END=$(read -d '' -ra df_arr < <(LC_ALL=C df -P /); echo "${df_arr[10]}" )
-   fi
-   FREE_DIFF=$(((FREE_DISKBLOCKS_END-FREE_DISKBLOCKS_START)))
-   MSG="End of script $SCRIPT_VERSION after $((EPOCH_DIFF/360)) seconds. and $((FREE_DIFF*512)) bytes on disk"
-   # echo 'Elapsed HH:MM:SS: ' $( awk -v t=$beg-seconds 'BEGIN{t=int(t*1000); printf "%d:%02d:%02d\n", t/3600000, t/60000%60, t/1000%60}' )
-   success "$MSG"
-   # note "Disk $FREE_DISKBLOCKS_START to $FREE_DISKBLOCKS_END"
-}
-sig_cleanup() {
-    trap '' EXIT  # some shells call EXIT after the INT handler.
-    false # sets $?
-    this_ending
-}
 
 
-### 10. Set Continue on Error and Trace
-# See https://wilsonmar.github.io/mac-setup/#StrictMode
-if [ "${CONTINUE_ON_ERR}" = true ]; then  # -cont
-   warning "Set to continue despite error ..."
-else
-   note "Set -e (error stops execution) ..."
-   set -e  # exits script when a command fails
-   # ALTERNATE: set -eu pipefail  # pipefail counts as a parameter
-fi
-if [ "${SET_TRACE}" = true ]; then
-   h2 "Set -x ..."
-   set -x  # (-o xtrace) to show commands for specific issues.
-fi
-# set -o nounset
 
 
-### 11a. Print run Operating environment information 
+### 11a. Print run Operating environment information
 note "Running $0 in $PWD"  # $0 = script being run in Present Wording Directory.
 note "Apple macOS sw_vers = $(sw_vers -productVersion) / uname -r = $(uname -r)"  # example: 10.15.1 / 21.4.0
 
 # See https://wilsonmar.github.io/mac-setup/#BashTraps
-note "OS_TYPE=$OS_TYPE using $PACKAGE_MANAGER from $DISK_PCT_FREE disk free"
+note "OS_TYPE=$OS_TYPE using $PACKAGE_MANAGER"
 HOSTNAME="$( hostname )"
    note "on hostname=$HOSTNAME "
 PUBLIC_IP=$( curl -s ifconfig.me )
@@ -903,14 +915,14 @@ if [ "${CONVERT_TO_ZSH}" = true ]; then
       if [ "${CONVERT_TO_ZSH}" = true ]; then
          warning "chsh -s /bin/zsh  # to switch to zsh from ${USER_SHELL_INFO}"
          #chsh -s /opt/homebrew/bin/zsh  # not allow because it is a non-standard shell.
-         chsh -s /bin/zsh 
+         chsh -s /bin/zsh
          # Password will be requested here.
 
          # TODO: read manual user input
          # exit 9  # to restart?
       fi
    else  # /opt/ on ARM computers:
-      h2 "Install Apple Rosetta x86 emulator on M1"
+      header "Install Apple Rosetta x86 emulator on M1"
       # See https://chrisjune-13837.medium.com/how-to-install-python-3-x-on-apple-m1-9e77ff94266a
       if ! command -v /usr/sbin/softwareupdate >/dev/null; then  # command not found, so:
          # Run this before installing Docker - https://javascript.plainenglish.io/which-docker-images-can-you-use-on-the-mac-m1-daba6bbc2dc5
@@ -933,7 +945,7 @@ while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 ps_kill(){  # $1=process name
       PSID=$( pgrap -l "$1" )
       if [ -z "$PSID" ]; then
-         h2 "Kill $1 PSID=$PSID ..."
+         header "Kill $1 PSID=$PSID ..."
          kill 2 "$PSID"
          sleep 2
       fi
@@ -944,7 +956,7 @@ ps_kill(){  # $1=process name
 # See https://wilsonmar.github.io/mac-setup/#InstallInstallers
 
 # Bashism Internal Field Separator used by echo, read for word splitting to lines newline or tab (not spaces).
-#IFS=$'\n\t'  
+#IFS=$'\n\t'
 #BASHFILE="$HOME/.bash_profile"  # on Macs
 # if ~/.bash_profile has not been defined, create it:
 #if [ ! -f "$BASHFILE" ]; then #  NOT found:
@@ -964,12 +976,12 @@ function BASHFILE_EXPORT() {
    name=$1
    value=$2
 
-   if grep -q "export $name=" "$BASHFILE" ; then    
+   if grep -q "export $name=" "$BASHFILE" ; then
       note "$name alias already in $BASHFILE"
    else
       note "Adding $name in $BASHFILE..."
       # Do it now:
-            export "$name=$value" 
+            export "$name=$value"
       # For after a Terminal is started:
       echo "export $name='$value'" >>"$BASHFILE"
    fi
@@ -977,7 +989,7 @@ function BASHFILE_EXPORT() {
 
 if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
 
-   h2 "-Install package managers ..."
+   header "-Install package managers ..."
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
 
       # See https://stackoverflow.com/questions/20559255/error-while-installing-json-gem-mkmf-rb-cant-find-header-files-for-ruby/20561594
@@ -991,15 +1003,15 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
                note "Xcode.app IDE already installed ..."
             fi
             # TODO: Specify install of CommandLineTools or Xcode.app:
-            h2 "Installing Apple's xcode CommandLineTools (this takes a while) ..."
-            xcode-select --install 
-            # NOTE: Install to /usr/bin/gcc; 
-            # macOS Yosemite and later ship with stubs in /usr/bin, which take precedence over this git. 
+            header "Installing Apple's xcode CommandLineTools (this takes a while) ..."
+            xcode-select --install
+            # NOTE: Install to /usr/bin/gcc;
+            # macOS Yosemite and later ship with stubs in /usr/bin, which take precedence over this git.
          fi
       fi
       # Verify:
       # Ensure cc, gcc, make, and Ruby Development Headers are available:
-      h2 "Confirming xcrun utility is installed ..."
+      header "Confirming xcrun utility is installed ..."
       if ! command -v xcrun >/dev/null; then  # installed:
          error "xcrun command not available!"
       else
@@ -1021,13 +1033,13 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
          if [ "$OS_TYPE" = "macOS" ]; then  # it's on a Mac:
             # /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-            h2 "Installing brew package manager on macOS using Ruby ..."
+            header "Installing brew package manager on macOS using Ruby ..."
             mkdir homebrew && curl -L https://GitHub.com/Homebrew/brew/tarball/master \
                | tar xz --strip 1 -C homebrew
             # if PATH for brew available:
 
          elif [ "$OS_TYPE" = "WSL" ]; then
-            h2 "Installing brew package manager on WSL ..." # A fork of Homebrew known as Linuxbrew.
+            header "Installing brew package manager on WSL ..." # A fork of Homebrew known as Linuxbrew.
             sh -c "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install.zsh)"
             # https://medium.com/@edwardbaeg9/using-homebrew-on-windows-10-with-windows-subsystem-for-linux-wsl-c7f1792f88b3
             # Linuxbrew installs to /home/linuxbrew/.linuxbrew/bin, so add that directory to your PATH.
@@ -1054,7 +1066,7 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
          fi  # "$OS_TYPE" = "WSL"
       else  # brew found:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Updating brew itself ..."
+            header "Updating brew itself ..."
             # per https://discourse.brew.zsh/t/how-to-upgrade-brew-stuck-on-0-9-9/33 from 2016:
             # cd "$(brew --repo)" && git fetch && git reset --hard origin/master && brew update
             brew update
@@ -1068,14 +1080,14 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
    elif [ "${PACKAGE_MANAGER}" = "apt-get" ]; then  # (Advanced Packaging Tool) for Debian/Ubuntu
 
       if ! command -v apt-get ; then
-         h2 "Installing apt-get package manager ..."
+         header "Installing apt-get package manager ..."
          wget http://security.ubuntu.com/ubuntu/pool/main/a/apt/apt_1.0.1ubuntu2.17_amd64.deb -O apt.deb
          sudo dpkg -i apt.deb
          # Alternative:
          # pkexec dpkg -i apt.deb
       else
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Upgrading apt-get ..."
+            header "Upgrading apt-get ..."
             # https://askubuntu.com/questions/194651/why-use-apt-get-upgrade-instead-of-apt-get-dist-upgrade
             sudo apt-get update
             sudo apt-get dist-upgrade
@@ -1085,7 +1097,7 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
 
    elif [ "${PACKAGE_MANAGER}" = "yum" ]; then  #  (Yellow dog Updater Modified) for Red Hat, CentOS
       if ! command -v yum ; then
-         h2 "Installing yum rpm package manager ..."
+         header "Installing yum rpm package manager ..."
          # https://www.unix.com/man-page/linux/8/rpm/
          wget https://dl.fedoraproject.org/pub/epel/7/x86_64/Packages/e/epel-release-7-11.noarch.rpm
          rpm -ivh yum-3.4.3-154.el7.centos.noarch.rpm
@@ -1106,17 +1118,17 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
 fi # if [ "${DOWNLOAD_INSTALL}"
 
 
-### 14. Install ShellCheck 
+### 14. Install ShellCheck
 # See https://wilsonmar.github.io/mac-setup/#ShellCheck
 # CAUTION: shellcheck does not work on zsh files (only bash files)
 if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
          if ! command -v shellcheck >/dev/null; then  # command not found, so:
-            h2 "Brew installing shellcheck ..."
+            header "Brew installing shellcheck ..."
             brew install shellcheck
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew upgrading shellcheck ..."
+               header "Brew upgrading shellcheck ..."
                brew upgrade shellcheck
                # pip install --user --upgrade shellcheck
             fi
@@ -1129,57 +1141,44 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
 fi  # DOWNLOAD_INSTALL
 
 # TODO: (Removed because it executes even if shellcheck is not installed:
-#if [ "${CONTINUE_ON_ERR}" = false ]; then  # -cont
-#   shellcheck "$0"
-#fi
+if [ "${SET_CONTINUE_ON_ERROR}" = false ]; then  # -cont
+   shellcheck "$0"
+fi
 
 
 ### 15. Install basic utilities (git, jq, tree, etc.) used by many:
 # See https://wilsonmar.github.io/mac-setup/#BasicUtils
+function remove_app() {
+   readonly app=${1:?"App must be specified."}
+   if [ ! -d "/Applications/$app.app" ]; then   # dir found:
+      if [[ $UID == 0 || $EUID == 0 ]]; then
+         rm -rf "/Applications/$app.app"
+      fi
+   else
+      fatal "Admin privileges required to remove "$app" app. Skipping"
+   fi
+}
 if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
-   # CAUTION: Install only packages that you actually use and trust!
-
-      h2 "Removing apps pre-installed by Apple, taking up space if they are not used:"
-
-      if [ -d "/Applications/iMovie.app" ]; then   # file NOT found:
-         rm -rf "/Applications/iMovie.app"
-      fi
-
-      if [ -d "/Applications/Keynote.app" ]; then   # file NOT found:
-         rm -rf "/Applications/Keynote.app"
-      fi
-
-      if [ -d "/Applications/Numbers.app" ]; then   # file NOT found:
-         rm -rf "/Applications/Numbers.app"
-      fi
-
-      if [ -d "/Applications/Pages.app" ]; then   # file NOT found:
-         rm -rf "/Applications/Pages.app"
-      fi
-
-      if [ -d "/Applications/GarageBand.app" ]; then   # file NOT found:
-         rm -rf "/Applications/Garage Band.app"
-      fi
-
-      # If you have Microsoft O365, download from https://www.office.com/?auth=2&home=1
-
-      h2 "Remaining apps installed by Apple App Store:"
-      find /Applications -path '*Contents/_MASReceipt/receipt' -maxdepth 4 -print |\sed 's#.app/Contents/_MASReceipt/receipt#.app#g; s#/Applications/##'
-
-      # Response: The Unarchiver.app, Pixelmator.app, 
-      # TextWrangler.app, WriteRoom.app,
-      # Texual.app, Twitter.app, Tweetdeck.app, Pocket.app, 
-
+   header "Removing apps pre-installed by Apple, taking up space if they are not used:"
+   # FIXME: Move to ENV
+   CLEANUP_APPS=(iMovie Keynote Numbers Pages GarageBand)
+   for app in $CLEANUP_APPS; do
+      remove_app $app
+   done
+   # If you have Microsoft O365, download from https://www.office.com/?auth=2&home=1
+   header "Remaining apps installed by Apple App Store:"
+   find /Applications -path '*Contents/_MASReceipt/receipt' -maxdepth 4 -print |\sed 's#.app/Contents/_MASReceipt/receipt#.app#g; s#/Applications/##'
+   abort
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
- 
-      h2 "brew install CLI utilities:"
+
+      header "brew install CLI utilities:"
 
       brew install curl
       brew install wget
 
       # Replacement for ls - see https://the.exa.website/#installation
       brew install exa
-      
+
       brew install ncdu  # linux disk usage
          # Pouring ncdu--2.1.2.arm64_monterey.bottle.tar.gz
          # /opt/homebrew/Cellar/ncdu/2.1.2: 6 files, 485.5KB
@@ -1197,7 +1196,7 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
          # git version 2.27.0
          # hub version 2.14.2
       brew install --cask github
-      
+
      #Crypto for Security:
       brew install --cask 1password
       if [ ! -d "/Applications/Keybase.app" ]; then   # file NOT found:
@@ -1211,7 +1210,7 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
      #https://www.hashicorp.com/blog/announcing-hashicorp-homebrew-tap referencing https://github.com/hashicorp/homebrew-tap
       brew install hashicorp/tap/vault
       which vault
-      
+
       brew install hashicorp/tap/consul
       which consul   # /usr/local/bin/consul
       brew install hashicorp/tap/envconsul
@@ -1231,7 +1230,7 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
       terraform version
          # Terraform v1.2.5
          # on darwin_arm64
-   
+
       brew install hashicorp/tap/sentinel
       which sentinel
 
@@ -1244,13 +1243,13 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
       #  Cannot install Consul. A Consul cluster is already installed in namespace consul with name consul.
         #Use the command `consul-k8s uninstall` to uninstall Consul from the cluster.
       # consul status
-         #    NAME  | NAMESPACE |     STATUS      | CHART VERSION | APPVERSION | REVISION |      LAST UPDATED        
+         #    NAME  | NAMESPACE |     STATUS      | CHART VERSION | APPVERSION | REVISION |      LAST UPDATED
          # ---------+-----------+-----------------+---------------+------------+----------+--------------------------
-           # consul | consul    | pending-install | 0.44.0        | 1.12.0     |        1 | 2022/06/05 17:47:57 MDT  
+           # consul | consul    | pending-install | 0.44.0        | 1.12.0     |        1 | 2022/06/05 17:47:57 MDT
           # ✓ Consul servers healthy (1/1)
           # ✓ Consul clients healthy (1/1)
      # kubectl get daemonset,statefulset,deployment -n consul
-     
+
      # Terminal enhancements:
       brew install --cask hyper
          # hyper stores a file in /usr/local/bin on ARM machines.
@@ -1342,19 +1341,19 @@ if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I
 
      # GUI Unicode .keylayout file editor for macOS at https://software.sil.org/ukelele/
      # Precursor to https://keyman.com/
-     #brew install --cask ukelele     
+     #brew install --cask ukelele
 
    fi  # PACKAGE_MANAGER
 
    if [ "${RUN_DEBUG}" = true ]; then  # -vv
 
-      h2 "Brew list ..."
-      brew list 
-      
-      h2 "brew list --cask"
+      header "Brew list ..."
+      brew list
+
+      header "brew list --cask"
       brew list --cask
 
-      h2 "List /Applications"
+      header "List /Applications"
       ls /Applications
    fi
 
@@ -1366,7 +1365,7 @@ fi  # DOWNLOAD_INSTALL
 # See https://wilsonmar.github.io/dotfiles/
 
 if [ "${SET_MACOS_SYSPREFS}" = true ]; then  # -macos
-   h2 "16. Override defaults in Apple macOS System Preferences:"
+   header "16. Override defaults in Apple macOS System Preferences:"
    # https://www.youtube.com/watch?v=r_MpUP6aKiQ = "~/.dotfiles in 100 seconds"
    # Patrick McDonald's $12,99 Udemy course "Dotfiles from Start to Finish" at https://bit.ly/3anaaFh
 
@@ -1399,23 +1398,23 @@ if [ "${SET_MACOS_SYSPREFS}" = true ]; then  # -macos
          # - Safari (default)
          # - Google Chrome
          # https://github.com/ulwlu/dotfiles/blob/master/system/macos.zsh has grep error.
-      
+
       # Explained in https://wilsonmar.github.io/dotfiles/#Dock
          # Dock (icon) Size: "smallish"
          defaults write com.apple.dock tilesize -int 36;
 
          # Position (Dock) on screen: Right
-         defaults write com.apple.dock orientation right; 
+         defaults write com.apple.dock orientation right;
 
          # Automatically hide and show the Dock:
-         defaults write com.apple.dock autohide-delay -float 0; 
+         defaults write com.apple.dock autohide-delay -float 0;
 
          # remove Dock show delay:
-         defaults write com.apple.dock autohide -bool true; 
+         defaults write com.apple.dock autohide -bool true;
          defaults write com.apple.dock autohide-time-modifier -float 0;
 
          # remove icons in Dock
-         defaults write com.apple.dock persistent-apps -array; 
+         defaults write com.apple.dock persistent-apps -array;
 
       # Explained in https://wilsonmar.github.io/dotfiles/#Battery
       # Show remaining battery time; hide percentage
@@ -1424,7 +1423,7 @@ if [ "${SET_MACOS_SYSPREFS}" = true ]; then  # -macos
 
    # Explained in https://wilsonmar.github.io/dotfiles/#Extensions
       # Show all filename extensions:
-      defaults write NSGlobalDomain AppleShowAllExtensions -bool true; 
+      defaults write NSGlobalDomain AppleShowAllExtensions -bool true;
       defaults write -g AppleShowAllExtensions -bool true
       # Show hidden files:
       defaults write com.apple.finder AppleShowAllFiles YES;
@@ -1462,7 +1461,7 @@ if [ "${USE_DOORMAT}" = true ]; then  # -Doormat
          brew install hashicorp/security/doormat-cli
       else  # installed already:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Brew upgrade doormat-cli ..."
+            header "Brew upgrade doormat-cli ..."
             brew upgrade doormat-cli
          fi
       fi
@@ -1472,26 +1471,26 @@ if [ "${USE_DOORMAT}" = true ]; then  # -Doormat
       #   brew install hashicorp/internal/hcloud  # 9 files, 11.3MB
       #else
       #   if [ "${UPDATE_PKGS}" = true ]; then
-      #      h2 "Brew upgrade internal/hcloud ..."
+      #      header "Brew upgrade internal/hcloud ..."
       #      brew upgrade hashicorp/internal/hcloud
       #   fi
       #fi
       # note "$( hcloud version )"  # v1.29.5
 
    fi  # "${PACKAGE_MANAGER}" = "brew"
-   
+
    echo CURRENT_CLIENT_IP_ADDR="$(curl -s ifconfig.me)"
    # Manually make sure credentials (AWS_ACCESS_KEY and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN)
    # are copied from https://doormat.hashicorp.services/
    # which is for your the IP address you used
-   
-   h2 "doormat login may open default Chrome browser window for Okta Verify ..."
+
+   header "doormat login may open default Chrome browser window for Okta Verify ..."
    export DOORMAT_URL_HANDLER_ARGS="-b com.google.Chrome"
    doormat login --validate
       # INFO[0001] session expires on 2022-01-13 03:03:11 -0500 EST
-   doormat login -f   # -f to refresh existing doormat credentials 
-      # INFO[0001] logging into doormat...                      
-      # INFO[0004] successfully logged into doormat!    
+   doormat login -f   # -f to refresh existing doormat credentials
+      # INFO[0001] logging into doormat...
+      # INFO[0004] successfully logged into doormat!
    # Browser Dashboard: https://doormat.hashicorp.services/
    # #proj-cloud-auth via Slack & @otterbot
    # See https://docs.prod.secops.hashicorp.services/doormat/cli/
@@ -1511,18 +1510,18 @@ if [ "${USE_ENVOY}" = true ]; then  # -Envoy
          curl -L https://func-e.io/install.sh | bash -s -- -b /usr/local/bin
       else  # installed already:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Brew upgrade func-e ..."
+            header "Brew upgrade func-e ..."
             brew upgrade func-e
          fi
       fi
       note "$( func-e -v )"  # ???
 
-      h2 "Download version 1.18.3 of Envoy."
+      header "Download version 1.18.3 of Envoy."
       func-e use 1.18.3
    fi  # brew
 
    sudo cp ~/.func-e/versions/1.18.3/bin/envoy /usr/local/bin/
-   
+
    note "$( envoy --version )"
 
    note "$( consul members )"
@@ -1532,7 +1531,7 @@ if [ "${USE_ENVOY}" = true ]; then  # -Envoy
 fi  # USE_ENVOY
 
 
-### 18. Image SD card 
+### 18. Image SD card
 # See https://wilsonmar.github.io/mac-setup/#ImageSDCard
 # See https://wilsonmar.github.io/iot-raspberry-install/
 # To avoid selecting a hard drive and wiping it out,
@@ -1550,7 +1549,7 @@ if [ "${IMAGE_SD_CARD}" = true ]; then  # -sd
    IMAGE_XZ_FILENAME="metal-rpi_4-arm64.img.xz"
    IMAGE_FILENAME="metal-rpi_4-arm64.img"
 
-   h2 "Image $IMAGE_XZ_FILENAME to $IMAGE_FILENAME on ${IMAGE_DISK} ,,,"
+   header "Image $IMAGE_XZ_FILENAME to $IMAGE_FILENAME on ${IMAGE_DISK} ,,,"
 
    # Prepare Pi - Download the proper Pi image ("1.0.1 released 2022-04-04.img")
    if [ ! -f "$IMAGE_XZ_FILENAME" ]; then   # file NOT found, so download from github:
@@ -1573,11 +1572,11 @@ if [ "${IMAGE_SD_CARD}" = true ]; then  # -sd
       note "Verify ${IMAGE_FILENAME} ..."
       ls -al "${IMAGE_FILENAME}"
       # TODO: Verify MD5?
-   fi 
+   fi
 
    sudo -v   # get password
 
-   h2 "Instead of using SD Association's SD Formatter or macOS Disk Utility "
+   header "Instead of using SD Association's SD Formatter or macOS Disk Utility "
    # TODO: See if on SD already:"
    # TODO: fdisk: /dev/disk2: Operation not permitted
    # Initialize sd card: "OK" to "Terminal" would like to access files on a removeable volume.
@@ -1598,7 +1597,7 @@ fi  # IMAGE_SD_CARD
 # See https://wilsonmar.github.io/mac-setup/#ProjFolder
 
 if [ -z "${PROJECTS_CONTAINER_PATH}" ]; then  # -p ""  override blank (the default)
-   h2 "Using current folder \"${PROJECTS_CONTAINER_PATH}\" as project folder path ..."
+   header "Using current folder \"${PROJECTS_CONTAINER_PATH}\" as project folder path ..."
    pwd
 else
    if [ ! -d "$PROJECTS_CONTAINER_PATH" ]; then  # path not available.
@@ -1627,7 +1626,7 @@ if [ "${CLONE_GITHUB}" = true ]; then   # -clone specified:
       # https://www.zshellcheck.net/wiki/SC2115 Use "${var:?}" to ensure this never expands to / .
       PROJECT_FOLDER_FULL_PATH="${PROJECTS_CONTAINER_PATH}/${PROJECT_FOLDER_NAME}"
       if [ -d "${PROJECT_FOLDER_FULL_PATH:?}" ]; then  # path available.
-         h2 "Removing project folder $PROJECT_FOLDER_FULL_PATH ..."
+         header "Removing project folder $PROJECT_FOLDER_FULL_PATH ..."
          ls -al "${PROJECT_FOLDER_FULL_PATH}"
          rm -rf "${PROJECT_FOLDER_FULL_PATH}"
       fi
@@ -1642,12 +1641,12 @@ if [ "${CLONE_GITHUB}" = true ]; then   # -clone specified:
    if [ -z "${PROJECT_FOLDER_NAME}" ]; then   # name not specified:
       fatal "PROJECT_FOLDER_NAME not specified for git cloning ..."
       exit
-   fi 
+   fi
 
    PROJECT_FOLDER_FULL_PATH="${PROJECTS_CONTAINER_PATH}/${PROJECT_FOLDER_NAME}"
-   h2 "-clone requested for $GITHUB_REPO_URL in $PROJECT_FOLDER_NAME ..."
+   header "-clone requested for $GITHUB_REPO_URL in $PROJECT_FOLDER_NAME ..."
    if [ -d "${PROJECT_FOLDER_FULL_PATH:?}" ]; then  # path available.
-      rm -rf "$PROJECT_FOLDER_NAME" 
+      rm -rf "$PROJECT_FOLDER_NAME"
       Delete_GitHub_clone    # defined above in this file.
    fi
 
@@ -1672,7 +1671,7 @@ else   # -clone not specified:
          mkdir "${PROJECT_FOLDER_NAME}"
             cd "${PROJECT_FOLDER_NAME}"
       else  # folder exists:
-         if [ "${DELETE_BEFORE}" = true ]; then  # -d 
+         if [ "${DELETE_BEFORE}" = true ]; then  # -d
             note "Removing project folder \"${PROJECT_FOLDER_NAME}\" ..."
             rm -rf "${PROJECT_FOLDER_NAME}"
             note "Making project folder \"${PROJECT_FOLDER_NAME}\" ..."
@@ -1681,12 +1680,12 @@ else   # -clone not specified:
             #note "cd into $PWD since -delete GitHub not specified..."
             cd "${PROJECT_FOLDER_NAME}"
             note "At $( pwd )"
-         fi         
+         fi
       fi
    fi
 
    if [ -z "${GITHUB_USER_EMAIL}" ]; then   # variable is blank
-      Input_GitHub_User_Info  # function defined above.
+      github_get_userinfo  # function defined above.
    else
       note "Using -u \"${GITHUB_USER_NAME}\" -e \"${GITHUB_USER_EMAIL}\" ..."
       # since this is hard coded as "John Doe" above
@@ -1703,7 +1702,7 @@ fi   # GITHUB_REPO_URL
 
 
 
-### 21. Reveal secrets stored within .gitsecret folder 
+### 21. Reveal secrets stored within .gitsecret folder
 # See https://wilsonmar.github.io/mac-setup/#UnencryptGitSecret
 # within repo from GitHub (after installing gnupg and git-secret)
 # See https://wilsonmar.github.io/mac-setup/#GitSecret
@@ -1719,15 +1718,15 @@ if false; then  # [ -d "$HOME/.gitsecret" ]; then   # found directory folder in 
    # "git secret add my-file.txt" then "git secret hide" and "rm my-file.txt"
    # This approach is not real secure because it's a matter of time before any static secret can be decrypted by brute force.
    # When someone is out - delete their public key, re-encrypt the files, and they won’t be able to decrypt secrets anymore.
-   h2 ".gitsecret folder found ..."
+   header ".gitsecret folder found ..."
    # Files in there were encrypted using "git-secret" commands referencing gpg gen'd key pairs based on an email address.
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
       if ! command -v gpg >/dev/null; then  # command not found, so:
-         h2 "Brew installing gnupg ..."
-         brew install gnupg  
+         header "Brew installing gnupg ..."
+         brew install gnupg
       else  # installed already:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Brew upgrading gnupg ..."
+            header "Brew upgrading gnupg ..."
             brew upgrade gnupg
          fi
       fi
@@ -1735,11 +1734,11 @@ if false; then  # [ -d "$HOME/.gitsecret" ]; then   # found directory folder in 
       # See https://github.com/sethvargo/secrets-in-serverless using kv or aws (iam) secrets engine.
 
       if ! command -v git-secret >/dev/null; then  # command not found, so:
-         h2 "Brew installing git-secret ..."
-         brew install git-secret  
+         header "Brew installing git-secret ..."
+         brew install git-secret
       else  # installed already:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Brew upgrading git-secret ..."
+            header "Brew upgrading git-secret ..."
             brew upgrade git-secret
          fi
       fi
@@ -1754,15 +1753,15 @@ if false; then  # [ -d "$HOME/.gitsecret" ]; then   # found directory folder in 
    else
       git clone https://github.com/sobolevn/git-secret.git
       cd git-secret && make build
-      PREFIX="/usr/local" make install      
+      PREFIX="/usr/local" make install
    fi  # PACKAGE_MANAGER
 
    if [ -f "${SECRETS_FILE}.secret" ]; then   # found
-      h2 "${SECRETS_FILE}.secret being decrypted using the private key in the bash user's local $HOME folder"
+      header "${SECRETS_FILE}.secret being decrypted using the private key in the bash user's local $HOME folder"
       git secret reveal
          # gpg ...
       if [ -f "${SECRETS_FILE}" ]; then   # found
-         h2 "File ${SECRETS_FILE} decrypted ..."
+         header "File ${SECRETS_FILE} decrypted ..."
       else
          fatal "File ${SECRETS_FILE} not decrypted ..."
          exit 9
@@ -1781,11 +1780,11 @@ pipenv_install() {
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
          # https://pipenv.readthedocs.io/en/latest/
          if ! command -v pipenv >/dev/null; then  # command not found, so:
-            h2 "Brew installing pipenv ..."
+            header "Brew installing pipenv ..."
             brew install pipenv
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew upgrading pipenv ..."
+               header "Brew upgrading pipenv ..."
                brew upgrade pipenv
                # pip install --user --upgrade pipenv
             fi
@@ -1793,7 +1792,7 @@ pipenv_install() {
          note "$( pipenv --version )"
             # pipenv, version 2018.11.26
 
-      #elif for Alpine? 
+      #elif for Alpine?
       elif [ "${PACKAGE_MANAGER}" = "apt-get" ]; then
          silent-apt-get-install "pipenv"  # please test
       elif [ "${PACKAGE_MANAGER}" = "yum" ]; then    # For Redhat distro:
@@ -1813,16 +1812,16 @@ pipenv_install() {
          # else
          #   pipenv install pytest -dev   # include Pipfile [dev-packages] components such as pytest
 
-      if [ -f "Pipfile.lock" ]; then  
+      if [ -f "Pipfile.lock" ]; then
          # See https://github.com/pypa/pipenv/blob/master/docs/advanced.rst on deployments
          # Install based on what's in Pipfile.lock:
-         h2 "Install based on Pipfile.lock ..."
+         header "Install based on Pipfile.lock ..."
          pipenv install --ignore-pipfile
       elif [ -f "Pipfile" ]; then  # found:
-         h2 "Install based on Pipfile ..."
+         header "Install based on Pipfile ..."
          pipenv install
-      elif [ -f "setup.py" ]; then  
-         h2 "Install a local setup.py into your virtual environment/Pipfile ..."
+      elif [ -f "setup.py" ]; then
+         header "Install a local setup.py into your virtual environment/Pipfile ..."
          pipenv install "-e ."
             # ✔ Successfully created virtual environment!
          # Virtualenv location: /Users/wilson_mar/.local/share/virtualenvs/python-samples-gTkdon9O
@@ -1839,13 +1838,13 @@ if [ "${USE_GOOGLE_CLOUD}" = true ]; then   # -g
 
    # See https://cloud.google.com/sdk/gcloud
    if ! command -v gcloud >/dev/null; then  # command not found, so:
-      h2 "Installing gcloud CLI in google-cloud-sdk ..."
+      header "Installing gcloud CLI in google-cloud-sdk ..."
       brew install --cask google-cloud-sdk
       # google-cloud-sdk is installed at /usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk.
       # anthoscligcl
    else  # installed already:
       if [ "${UPDATE_PKGS}" = true ]; then
-         h2 "Re-installing gcloud CLI in google-cloud-sdk ..."
+         header "Re-installing gcloud CLI in google-cloud-sdk ..."
          brew cask upgrade google-cloud-sdk
       fi
    fi
@@ -1856,7 +1855,7 @@ if [ "${USE_GOOGLE_CLOUD}" = true ]; then   # -g
       # gsutil 4.47
 
 
-   h2 "gcloud info & auth list ..."
+   header "gcloud info & auth list ..."
    GCP_AUTH=$( gcloud auth list )
    if [[ $GCP_AUTH == *"No credentialed accounts"* ]]; then
       gcloud auth login  # for pop-up browser auth.
@@ -1870,7 +1869,7 @@ if [ "${USE_GOOGLE_CLOUD}" = true ]; then   # -g
    # gcloud config set account `ACCOUNT`
 
    if [ -n "$PROJECT_NAME" ]; then   # variable is NOT empty
-      h2 "Using -project $PROJECT_NAME ..."
+      header "Using -project $PROJECT_NAME ..."
       gcloud config set project "${PROJECT_NAME}"
    fi
    GCP_PROJECT=$( gcloud config list project | grep project | awk -F= '{print $2}' )
@@ -1900,7 +1899,7 @@ if [ "${USE_GOOGLE_CLOUD}" = true ]; then   # -g
    #note "RESPONSE=$RESPONSE"
 
    if [ "${RUN_VERBOSE}" = true ]; then
-      h2 "gcloud info and versions ..."
+      header "gcloud info and versions ..."
       gcloud info
       gcloud version
          # git: [git version 2.11.0]
@@ -1950,11 +1949,11 @@ if [ "${USE_GOOGLE_CLOUD}" = true ]; then   # -g
       # https://github.com/GoogleCloudPlatform/berglas is being migrated to Google Secrets Manager.
       # See https://github.com/sethvargo/secrets-in-serverless/tree/master/gcs to encrypt secrets on Google Cloud Storage accessed inside a serverless Cloud Function.
       # using gcloud beta secrets create "my-secret" --replication-policy "automatic" --data-file "/tmp/my-secret.txt"
-   h2 "Retrieve secret version from GCP Cloud Secret Manager ..."
+   header "Retrieve secret version from GCP Cloud Secret Manager ..."
    gcloud beta secrets versions access "latest" --secret "my-secret"
-         # A secret version contains the actual contents of a secret. "latest" is the VERSION_ID      
+         # A secret version contains the actual contents of a secret. "latest" is the VERSION_ID
 
-   h2 "In GCP create new repository using gcloud & git commands:"
+   header "In GCP create new repository using gcloud & git commands:"
    # gcloud source repos create REPO_DEMO
 
    # Clone the contents of your new Cloud Source Repository to a local repo:
@@ -1976,12 +1975,12 @@ if [ "${USE_GOOGLE_CLOUD}" = true ]; then   # -g
 
 
    # https://google.qwiklabs.com/games/759/labs/2373
-   h2 "Using GCP for Speech-to-Text API"  # https://cloud.google.com/speech/reference/rest/v1/RecognitionConfig
+   header "Using GCP for Speech-to-Text API"  # https://cloud.google.com/speech/reference/rest/v1/RecognitionConfig
    # usage limits: https://cloud.google.com/speech-to-text/quotas
    curl -O -s "https://raw.githubusercontent.com/wilsonmar/DevSecOps/master/gcp/gcp-speech-to-text/request.json"
    cat request.json
    # Listen to it at: https://storage.cloud.google.com/speech-demo/brooklyn.wav
-   
+
    curl -s -X POST -H "Content-Type: application/json" --data-binary @request.json \
       "https://speech.googleapis.com/v1/speech:recognize?key=${GOOGLE_API_KEY}" > result.json
    cat result.json
@@ -1989,7 +1988,7 @@ if [ "${USE_GOOGLE_CLOUD}" = true ]; then   # -g
 # exit  # in dev
 
    # https://google.qwiklabs.com/games/759/labs/2374
-   h2 "GCP AutoML Vision API"
+   header "GCP AutoML Vision API"
    # From the Navigation menu and select APIs & Services > Library https://cloud.google.com/automl/ui/vision
    # In the search bar type in "Cloud AutoML". Click on the Cloud AutoML API result and then click Enable.
 
@@ -2019,16 +2018,16 @@ if [ "${USE_AWS_CLOUD}" = true ]; then   # -aws
 
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
 
-      # For aws-cli commands, see http://docs.aws.amazon.com/cli/latest/userguide/ 
+      # For aws-cli commands, see http://docs.aws.amazon.com/cli/latest/userguide/
       if ! command -v aws >/dev/null; then
-         h2 "brew install awscli ..."
+         header "brew install awscli ..."
          brew install awscli
       fi
       note "$( aws --version )"  # aws-cli/2.6.1 Python/3.9.12 Darwin/21.4.0 source/arm64 prompt/off
                      # previously: aws-cli/2.0.9 Python/3.8.2 Darwin/19.5.0 botocore/2.0.0dev13
       note "which aws at $( which aws )"  # /usr/local/bin/aws
 
-      # h2 "aws version ..."  
+      # header "aws version ..."
       # SHELL TECHNIQUE: any error results in a long extraneous list, so send the err output to a file
       # so the first lines are visible. That file is then deleted.
       # TODO: Capture so not exit CLI
@@ -2043,13 +2042,13 @@ if [ "${USE_AWS_CLOUD}" = true ]; then   # -aws
       # PYTHON3_INSTALL  # function defined at top of this file.
       # :  # break out immediately. Not execute the rest of the if strucutre.
       # TODO: https://github.com/bonusbits/devops_bash_config_examples/blob/master/shared/.bash_aws
-      h2 "pipenv install awscli ..."
+      header "pipenv install awscli ..."
       if ! command -v pipenv >/dev/null; then
-         brew install pipenv 
-         pipenv install awscli --user  # no --upgrade 
+         brew install pipenv
+         pipenv install awscli --user  # no --upgrade
       else
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "pipenv upgrade awscli ..."
+            header "pipenv upgrade awscli ..."
             note "Before upgrade: $(aws --version)"  # aws-cli/2.0.9 Python/3.8.2 Darwin/19.4.0 botocore/2.0.0dev13
                # sudo rm -rf /usr/local/aws
                # sudo rm /usr/local/bin/aws
@@ -2057,7 +2056,7 @@ if [ "${USE_AWS_CLOUD}" = true ]; then   # -aws
                # unzip awscli-bundle.zip
                # sudo ./awscli-bundle/install -i /usr/local/aws -b /usr/local/bin/aws
             if ! command -v pipenv >/dev/null; then
-               brew install pipenv 
+               brew install pipenv
             fi
             pipenv install awscli --upgrade --user
          fi
@@ -2067,11 +2066,11 @@ if [ "${USE_AWS_CLOUD}" = true ]; then   # -aws
 
 
    #if [ -d "$HOME/.bash-my-aws" ]; then   # folder is there
-   #   h2 "Installing ~/.bash-my-aws ..."
+   #   header "Installing ~/.bash-my-aws ..."
    #   git clone https://github.com/bash-my-aws/bash-my-aws.git ~/.bash-my-aws
    #else
    #   if [ "${UPDATE_PKGS}" = true ]; then
-   #      h2 "ReInstalling ~/.bash-my-aws ..."
+   #      header "ReInstalling ~/.bash-my-aws ..."
    #      git clone https://github.com/bash-my-aws/bash-my-aws.git ~/.bash-my-aws
    #   fi
    #fi
@@ -2091,11 +2090,11 @@ if [ "${USE_AWS_CLOUD}" = true ]; then   # -aws
       if [ "${PACKAGE_MANAGER}" = "brew" ]; then
          # See https://www.davehall.com.au/tags/bash
          if ! command -v aws-vault >/dev/null; then  # command not found, so:
-            h2 "Brew installing --cask aws-vault ..."
-            brew install --cask aws-vault  
+            header "Brew installing --cask aws-vault ..."
+            brew install --cask aws-vault
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew cask upgrade aws-vault ..."
+               header "Brew cask upgrade aws-vault ..."
                note "aws-vault version $( aws-vault --version )"  # v5.3.2
                brew upgrade aws-vault
             fi
@@ -2104,23 +2103,23 @@ if [ "${USE_AWS_CLOUD}" = true ]; then   # -aws
 
       fi  # "${PACKAGE_MANAGER}" = "brew" ]; then
 
-   fi  # if [ "${USE_VAULT}" = true 
+   fi  # if [ "${USE_VAULT}" = true
 
 
    # https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html
       # See https://docs.aws.amazon.com/eks/latest/userguide/install-aws-iam-authenticator.html
          if ! command -v aws-iam-authenticator >/dev/null; then  # not found:
-            h2 "aws-iam-authenticator install ..."
+            header "aws-iam-authenticator install ..."
             brew install aws-iam-authenticator
             chmod +x ./aws-iam-authenticator
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew upgrading aws-iam-authenticator ..."
+               header "Brew upgrading aws-iam-authenticator ..."
                note "aws-iam-authenticator version $( aws-iam-authenticator version )"  # {"Version":"v0.5.0","Commit":"1cfe2a90f68381eacd7b6dcfa2bf689e76eb8b4b"}
                brew upgrade aws-iam-authenticator
             fi
          fi
-         note "aws-iam-authenticator version $( aws-iam-authenticator version )"  # {"Version":"v0.5.0","Commit":"1cfe2a90f68381eacd7b6dcfa2bf689e76eb8b4b"}  
+         note "aws-iam-authenticator version $( aws-iam-authenticator version )"  # {"Version":"v0.5.0","Commit":"1cfe2a90f68381eacd7b6dcfa2bf689e76eb8b4b"}
 
 fi  # USE_AWS_CLOUD
 
@@ -2138,7 +2137,7 @@ fi
 ### 26. Install K8S minikube
 # See https://wilsonmar.github.io/mac-setup/#Minikube
 if [ "${USE_K8S}" = true ]; then  # -k8s
-   h2 "-k8s means minkube locally ..."
+   header "-k8s means minkube locally ..."
 
    # See https://kubernetes.io/docs/tasks/tools/install-minikube/
    RESPONSE="$( sysctl -a | grep -E --color 'machdep.cpu.features|VMX' )"
@@ -2155,11 +2154,11 @@ if [ "${USE_K8S}" = true ]; then  # -k8s
       if [ "${PACKAGE_MANAGER}" = "brew" ]; then
          if ! command -v minikube >/dev/null; then  # command not found, so:
             # See https://minikube.sigs.k8s.io/docs/start/
-            h2 "brew install --casking minikube ..."
-            brew install minikube  
+            header "brew install --casking minikube ..."
+            brew install minikube
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew cask upgrade minikube ..."
+               header "Brew cask upgrade minikube ..."
                note "minikube version $( minikube version )"  # minikube version: v1.11.0
                brew upgrade minikube
             fi
@@ -2167,12 +2166,12 @@ if [ "${USE_K8S}" = true ]; then  # -k8s
          note "minikube version $( minikube version )"  # minikube version: v1.11.0
              # commit: 57e2f55f47effe9ce396cea42a1e0eb4f611ebbd
 
-      fi  # "${PACKAGE_MANAGER}" = "brew" 
+      fi  # "${PACKAGE_MANAGER}" = "brew"
 
       # See https://minikube.sigs.k8s.io/docs/start/
       # Run Docker
       KUBE_VERSION="1.23.3"
-      h2 "minikube start with ${KUBE_VERSION} ..."
+      header "minikube start with ${KUBE_VERSION} ..."
       time minikube start --driver=docker --kubernetes-version="${KUBE_VERSION}"
          # 😄  minikube v1.25.2 on Darwin 12.3.1 (arm64)
          # ✨  Automatically selected the docker driver. Other choices: ssh, podman (experimental)
@@ -2181,7 +2180,7 @@ if [ "${USE_K8S}" = true ]; then  # -k8s
          # 💾  Downloading Kubernetes v1.23.3 preload ...
          #     > preloaded-images-k8s-v17-v1...: 419.07 MiB / 419.07 MiB  100.00% 10.90 Mi
          #     > gcr.io/k8s-minikube/kicbase: 343.12 MiB / 343.12 MiB  100.00% 7.79 MiB p/
-         # 🔥  Creating docker container (CPUs=2, Memory=4000MB) .../ 
+         # 🔥  Creating docker container (CPUs=2, Memory=4000MB) .../
          # 🐳  Preparing Kubernetes v1.23.3 on Docker 20.10.12 ...
          #     ▪ kubelet.housekeeping-interval=5m
          #     ▪ Generating certificates and keys ...
@@ -2191,7 +2190,7 @@ if [ "${USE_K8S}" = true ]; then  # -k8s
          #     ▪ Using image gcr.io/k8s-minikube/storage-provisioner:v5
          # 🌟  Enabled addons: storage-provisioner, default-storageclass
          # 🏄  Done! kubectl is now configured to use "minikube" cluster and "default" namespace by default
-         # minikube start  1.80s user 1.11s system 17% cpu 17.048 total      
+         # minikube start  1.80s user 1.11s system 17% cpu 17.048 total
       minikube status
          # minikube
          # type: Control Plane
@@ -2208,7 +2207,7 @@ if [ "${USE_K8S}" = true ]; then  # -k8s
       #kubectl config use-context minikube
 
       KUBE_DEPLOY_NAME="hello-minkiube"
-      h2 "Create a ${KUBE_DEPLOY_NAME} deployment of echoserver with port 8080 ..."
+      header "Create a ${KUBE_DEPLOY_NAME} deployment of echoserver with port 8080 ..."
       kubectl create deployment "${KUBE_DEPLOY_NAME}" --image=k8s.gcr.io/echoserver:1.4
          # Response: deployment.apps/hello-minikube created
          # TODO: error: failed to create deployment: deployments.apps "hello-minikube" already exists
@@ -2222,16 +2221,16 @@ if [ "${USE_K8S}" = true ]; then  # -k8s
 
       # ps
          # 28282 ttys003    0:01.34 /opt/homebrew/bin/kubectl --context minikube proxy --port 0
-   
-      # h2 "Create tunnel (locking up Terminal window) to ensure load balancer services are allocated external IPs on minikube."
+
+      # header "Create tunnel (locking up Terminal window) to ensure load balancer services are allocated external IPs on minikube."
       #minikube tunnel
          # ✅  Tunnel successfully started
          # 📌  NOTE: Please do not close this terminal as this process must stay alive for the tunnel to be accessible ...
-   
+
       minikube service "${KUBE_DEPLOY_NAME}" --url
       # See https://minikube.sigs.k8s.io/docs/handbook/accessing
       # Let minikube launch a web browser:
-      
+
       #minikube service "${KUBE_DEPLOY_NAME}"
       # Alternatively, use kubectl to forward the port:
       kubectl port-forward service/hello-minikube 7080:8080
@@ -2241,13 +2240,13 @@ if [ "${USE_K8S}" = true ]; then  # -k8s
       # FIXME: But it's not.
 
       # if NOT delete:
-         h2 "Stop to restart the same cluster to continue work ..."
+         header "Stop to restart the same cluster to continue work ..."
          minikube stop
             # ✋  Stopping node "minikube"  ...
             # 🛑  Powering off "minikube" via SSH ...
             # 🛑  1 node stopped.
 #      else
-         h2 "Fully re-create your cluster from scratch for some reason, you can delete it ..."
+         header "Fully re-create your cluster from scratch for some reason, you can delete it ..."
          minikube delete
             # 🔥  Deleting "minikube" in docker ...
             # 🔥  Removing /Users/wilsonmar/.minikube/machines/minikube ...
@@ -2262,7 +2261,7 @@ fi  # USE_K8S
 # See https://wilsonmar.github.io/mac-setup/#EKS
 if [ "${RUN_EKS}" = true ]; then  # -EKS
 
-   h2 "kubectl ${MACHINE_TYPE} client install ..."
+   header "kubectl ${MACHINE_TYPE} client install ..."
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
       note $( brew info kubectl )
       # Avoid this need to specify version all the time, badly recommended
@@ -2274,14 +2273,14 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
       #      fi
       # Use Homebrew instead of https://docs.aws.amazon.com/eks/latest/userguide/getting-started-eksctl.html
       # See https://docs.aws.amazon.com/eks/latest/userguide/install-kubectl.html
-      # to communicate with the k8s cluster API server. 
+      # to communicate with the k8s cluster API server.
       if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
          if ! command -v kubectl >/dev/null; then  # not found:
-         h2 "kubectl install ..."
+         header "kubectl install ..."
             brew install kubectl
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew upgrading kubectl ..."
+               header "Brew upgrading kubectl ..."
                note "kubectl before upgrade = $( kubectl version --short --client )"  # Client Version: v1.16.6-beta.0
                brew upgrade kubectl
             fi
@@ -2294,15 +2293,15 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
 
          # iam-authenticator
 
-         h2 "eksctl install ..."
+         header "eksctl install ..."
          # See https://docs.aws.amazon.com/eks/latest/userguide/getting-started-eksctl.html
          if ! command -v eksctl >/dev/null; then  # not found:
-            h2 "eksctl install ..."
+            header "eksctl install ..."
             brew tap weaveworks/tap
             brew install weaveworks/tap/eksctl
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew upgrading eksctl ..."
+               header "Brew upgrading eksctl ..."
                note "eksctl version $( eksctl version )"  # 0.21.0
                brew tap weaveworks/tap
                brew upgrade eksctl && brew link --overwrite eksctl
@@ -2313,18 +2312,18 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
    fi  # "${PACKAGE_MANAGER}" = "brew" ]; then
 
 
-   h2 "aws iam get-user to check AWS credentials ... "
+   header "aws iam get-user to check AWS credentials ... "
    # see https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html
    # Secrets from AWS Management Console https://console.aws.amazon.com/iam/
    # More variables at https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
-   
-   # For AWS authentication, I prefer to individual variables rather than use static data in a 
-   # named profile file referenced in the AWS_PROFILE environment variable 
+
+   # For AWS authentication, I prefer to individual variables rather than use static data in a
+   # named profile file referenced in the AWS_PROFILE environment variable
    # per https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html
 
-   # h2 "Working with AWS MFA ..."
+   # header "Working with AWS MFA ..."
    # See https://blog.gruntwork.io/authenticating-to-aws-with-environment-variables-e793d6f6d02e
-   # Give it the ARN of your MFA device (123456789012) and 
+   # Give it the ARN of your MFA device (123456789012) and
    # MFA token (123456) from the Google Authenticator App or key fob:
    #RESPONSE_JSON="$( aws sts get-session-token \
    #   --serial-number "${AWS_MFA_ARN}" \
@@ -2347,7 +2346,7 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
       # This script stops if there is a problem here.
    note "$( echo "${RESPONSE}" | jq )"
 
-   h2 "Create cluster $EKS_CLUSTER_NAME using eksctl ... "
+   header "Create cluster $EKS_CLUSTER_NAME using eksctl ... "
    # See https://eksctl.io/usage/creating-and-managing-clusters/
    # NOT USED: eksctl create cluster -f "${EKS_CLUSTER_FILE}"  # cluster.yaml
 
@@ -2382,7 +2381,7 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
    if [ "${EKS_CRED_IS_LOCAL}" = true ]; then
       if [ -f "$HOME/.kube/config" ]; then  # file exists:
          # If file exists in "$HOME/.kube/config" for cluster credentials
-         h2 "kubectl get nodes ..."
+         header "kubectl get nodes ..."
          kubectl --kubeconfig .kube/config  get nodes
       else
          note "No $HOME/.kube/config, so create folder ..."
@@ -2396,9 +2395,9 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
 
    # https://github.com/cloudacademy/Store2018
    # git clone https://github.com/cloudacademy/Store2018/tree/master/K8s
-   # from https://hub.docker.com/u/jeremycookdev/ 
+   # from https://hub.docker.com/u/jeremycookdev/
        # deployment/
-       #   store2018.service.yaml 
+       #   store2018.service.yaml
        #   store2018.inventoryservice.yaml
        #   store2018.accountservice.yaml
        #   store2018.yaml  # specifies host names
@@ -2420,7 +2419,7 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
       # NAME           DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
       # store-service  3         3         3            3           31s
 
-   # kubectl get pods   # to deployment 
+   # kubectl get pods   # to deployment
       # NAME  READY   STATUS   RESTARTS   AGE
       # ....  1/1     Running  0          31s
 
@@ -2428,17 +2427,17 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
    #  apply the NVIDIA device plugin for Kubernetes as a DaemonSet on the cluster:
    # kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/1.0.0-beta/nvidia-device-plugin.yml
 
-   # h2 "Opening EKS Clusters web page ..."
+   # header "Opening EKS Clusters web page ..."
    # open https://${AWS_DEFAULT_REGION}.console.aws.amazon.com/eks/home?region=${AWS_DEFAULT_REGION}#/clusters
 
-   # h2 "Opening EKS Worker Nodes in EC2 ..."
+   # header "Opening EKS Worker Nodes in EC2 ..."
    # open https://${AWS_DEFAULT_REGION}.console.aws.amazon.com/ec2/v2/home?region=${AWS_DEFAULT_REGION}#instances;sort=tag:Name
 
-   # h2 "Listing resources ..."  # cluster, security groups, IAM policy, route, subnet, vpc, etc.
+   # header "Listing resources ..."  # cluster, security groups, IAM policy, route, subnet, vpc, etc.
    # note $( aws cloudformation describe-stack-resources --region="${AWS_DEFAULT_REGION}" \
    #      --stack-name="${EKS_CLUSTER_NAME}" )
 
-   # h2 "Listing node group info ..."  # Egress, InstanceProfile, LaunchConfiguration, IAM:Policy, SecurityGroup
+   # header "Listing node group info ..."  # Egress, InstanceProfile, LaunchConfiguration, IAM:Policy, SecurityGroup
    # note $( aws cloudformation describe-stack-resources --region="${AWS_DEFAULT_REGION}" \
    #      --stack-name="${EKS_NODEGROUP_ID}" )
 
@@ -2449,14 +2448,14 @@ if [ "${RUN_EKS}" = true ]; then  # -EKS
    # Performance testing using ab (apache bench)
 
    if [ "$DELETE_CONTAINER_AFTER" = true ]; then  # -D
- 
+
       kubectl delete deployments --all
       kubectl get pods
 
       kubectl delete services --all   # load balancers
       kubectl get services
-   
-      eksctl get cluster 
+
+      eksctl get cluster
       eksctl delete cluster "${EKS_CLUSTER_NAME}"
 
       if [ -f "$HOME/.kube/config" ]; then  # file exists:
@@ -2473,18 +2472,18 @@ fi  # EKS
 # See https://wilsonmar.github.io/mac-setup/#CircleCI
 if [ "${USE_CIRCLECI}" = true ]; then   # -L
    # https://circleci.com/docs/2.0/getting-started/#setting-up-circleci
-   # h2 "circleci setup ..."
+   # header "circleci setup ..."
 
    # Using variables from env file:
-   h2 "circleci setup ..."
-   if [ -n "${CIRCLECI_API_TOKEN}" ]; then  
+   header "circleci setup ..."
+   if [ -n "${CIRCLECI_API_TOKEN}" ]; then
       if ! command -v circleci ; then
-         h2 "Installing circleci ..."
+         header "Installing circleci ..."
    # No brew: brew install circleci
          curl -fLSs https://circle.ci/cli | bash
       else
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Removing and installing circleci ..."
+            header "Removing and installing circleci ..."
             rm -rf "/usr/local/bin/circleci"
             curl -fLSs https://circle.ci/cli | bash
          fi
@@ -2502,7 +2501,7 @@ if [ "${USE_CIRCLECI}" = true ]; then   # -L
       exit 9
    fi
 
-   h2 "Loading Circle CI config.yml ..."
+   header "Loading Circle CI config.yml ..."
    mkdir -p "$HOME/.circleci"
 
    echo "-f MY_FILE=$MY_FILE"
@@ -2510,29 +2509,29 @@ if [ "${USE_CIRCLECI}" = true ]; then   # -L
       note "-file not specified. Using config.yml from repo ... "
       # copy with -force to update:
       cp -f ".circleci/config.yml" "$HOME/.circleci/config.yml"
-   elif [ -f "${MY_FILE}" ]; then 
+   elif [ -f "${MY_FILE}" ]; then
       fatal "${MY_FILE} not found ..."
       exit 9
    else
       mv "${MY_FILE}" "$HOME/.circleci/config.yml"
    fi
 
-   if [ ! -f "$HOME/.circleci/config.yml" ]; then 
+   if [ ! -f "$HOME/.circleci/config.yml" ]; then
       ls -al "$HOME/.circleci/config.yml"
       fatal "$HOME/.circleci/config.yml not found. Aborting ..."
       exit 9
    fi
-   h2 "circleci config validate in $HOME/.circleci ..."
+   header "circleci config validate in $HOME/.circleci ..."
    circleci config validate
       # You are running 0.1.7179
       # A new release is available (0.1.8599)
       # You can update with `circleci update install`
       # Error: Could not load config file at .circleci/config.yml: open .circleci/config.yml: no such file or directory
 
-   h2 "??? Run Circle CI ..."  # https://circleci.com/docs/2.0/local-cli/
+   header "??? Run Circle CI ..."  # https://circleci.com/docs/2.0/local-cli/
    # circleci run ???
 
-   h2 "Done with Circle CI ..."
+   header "Done with Circle CI ..."
    exit
 fi  # USE_CIRCLECI
 
@@ -2554,7 +2553,7 @@ if [ "${USE_YUBIKEY}" = true ]; then   # -Y
          silent-apt-get-install "ykman"
       elif [ "${PACKAGE_MANAGER}" = "yum" ]; then    # For Redhat distro:
          sudo yum install ykman      ; echo "TODO: please test"
-         exit 9                      
+         exit 9
       elif [ "${PACKAGE_MANAGER}" = "zypper" ]; then   # for [open]SuSE:
          sudo zypper install ykman   ; echo "TODO: please test"
          exit 9
@@ -2579,7 +2578,7 @@ if [ "${USE_YUBIKEY}" = true ]; then   # -Y
          silent-apt-get-install "yubico-piv-tool"
       elif [ "${PACKAGE_MANAGER}" = "yum" ]; then    # For Redhat distro:
          sudo yum install yubico-piv-tool      ; echo "TODO: please test"
-         exit 9                      
+         exit 9
       elif [ "${PACKAGE_MANAGER}" = "zypper" ]; then   # for [open]SuSE:
          sudo zypper install yubico-piv-tool   ; echo "TODO: please test"
          exit 9
@@ -2588,23 +2587,23 @@ if [ "${USE_YUBIKEY}" = true ]; then   # -Y
 
 
    # TODO: Verify code below
-   h2 "PIV application reset to remove all existing keys ..."
+   header "PIV application reset to remove all existing keys ..."
    ykman piv reset
       # RESPONSE: Resetting PIV data...
 
-   h2 "Generating new certificate ..."
+   header "Generating new certificate ..."
    yubico-piv-tool -a generate -s 9c -A RSA2048 --pin-policy=once --touch-policy=never -o public.pem
    yubico-piv-tool -a verify  -S "/CN=SSH key/" -a selfsign -s 9c -i public.pem -o cert.pem
    yubico-piv-tool -a import-certificate -s 9c -i cert.pem
 
-   h2 "Export SSH public key ..."
+   header "Export SSH public key ..."
    ssh-keygen -f public.pem -i -mPKCS8 | tee ./yubi.pub
 
-   h2 "Sign key on CA using vault ..."
+   header "Sign key on CA using vault ..."
    vault write -field=signed_key  "${SSH_CLIENT_SIGNER_PATH}/sign/oleksii_samorukov public_key=@./yubi.pub" \
       | tee ./yubi-cert.pub
 
-   h2 "Test whethef connection is working ..."
+   header "Test whethef connection is working ..."
    ssh  git@github.com -I /usr/local/lib/libykcs11.dylib -o "CertificateFile ./yubi-cert.pub"
 
 fi  # USE_YUBIKEY
@@ -2613,21 +2612,21 @@ fi  # USE_YUBIKEY
 #### 31. Use GitHub
 # See https://wilsonmar.github.io/mac-setup/#UseGitHub
 if [ "${MOVE_SECURELY}" = true ]; then   # -m
-   # See https://github.com/settings/keys 
+   # See https://github.com/settings/keys
    # See https://github.blog/2019-08-14-ssh-certificate-authentication-for-github-enterprise-cloud/
 
    pushd  "$HOME/.ssh"
-   h2 "At temporary $PWD with VAULT_USERNAME=${VAULT_USERNAME}"
+   header "At temporary $PWD with VAULT_USERNAME=${VAULT_USERNAME}"
    ## STEP: Generate local SSH key pair:
    if [ -n "${LOCAL_SSH_KEYFILE}" ]; then  # is not empty
       rm -f "${LOCAL_SSH_KEYFILE}"
       rm -f "${LOCAL_SSH_KEYFILE}.pub"
 #      if [ ! -f "${LOCAL_SSH_KEYFILE}" ]; then  # not exists
-         h2 "ssh-keygen -t rsa -f \"${LOCAL_SSH_KEYFILE}\" -C \"${VAULT_USERNAME}\" ..."
+         header "ssh-keygen -t rsa -f \"${LOCAL_SSH_KEYFILE}\" -C \"${VAULT_USERNAME}\" ..."
          ssh-keygen -t rsa -f "${LOCAL_SSH_KEYFILE}" -N ""
-             #  -C "${VAULT_USERNAME}" 
-#      else 
-#         h2 "Using existing SSH key pair \"${LOCAL_SSH_KEYFILE}\" "
+             #  -C "${VAULT_USERNAME}"
+#      else
+#         header "Using existing SSH key pair \"${LOCAL_SSH_KEYFILE}\" "
 #      fi
       note "$( ls -al "${LOCAL_SSH_KEYFILE}" )"
    fi  # LOCAL_SSH_KEYFILE
@@ -2646,12 +2645,12 @@ if [ USE_ALWAYS = true ]; then
 
       ### STEP: Paste locally generated public key in GitHub UI:
       if [ ! -f "${VAULT_CA_KEY_FULLPATH}" ]; then  # not exists
-         h2 "CA key file ${VAULT_CA_KEY_FULLPATH} not found, so generating for ADMIN ..."
+         header "CA key file ${VAULT_CA_KEY_FULLPATH} not found, so generating for ADMIN ..."
          ssh-keygen -t rsa -f "${VAULT_CA_KEY_FULLPATH}" -N ""
             # -N bypasses the passphrase
             # see https://unix.stackexchange.com/questions/69314/automated-ssh-keygen-without-passphrase-how
 
-         h2 "ADMIN: In GitHub.com GUI SSH Certificate Authorities, manually click New CA and paste CA cert. ..."
+         header "ADMIN: In GitHub.com GUI SSH Certificate Authorities, manually click New CA and paste CA cert. ..."
          # On macOS
             pbcopy <"${VAULT_CA_KEY_FULLPATH}.pub"
             open "https://github.com/${GITHUB_ORG}/settings/security"
@@ -2671,13 +2670,13 @@ if [ USE_ALWAYS = true ]; then
 
       # Instead of pbcopy and paste in GitHub.com GUI, obtain and use SSH certificate from a SSH CA:
       if [ -z "${VAULT_CA_KEY_FULLPATH}" ]; then  # is not empty
-         VAULT_CA_KEY_FULLPATH="./ca_key"  # "~/.ssh/ca_key"  # "./ca_key" for current (project) folder  
+         VAULT_CA_KEY_FULLPATH="./ca_key"  # "~/.ssh/ca_key"  # "./ca_key" for current (project) folder
       fi
-      
+
       ### STEP: Call Vault to sign public key and return it as a cert:
-      h2 "Signing user ${GITHUB_ACCOUNT} public key file ${LOCAL_SSH_KEYFILE} ..."
-      ssh-keygen -s "${VAULT_CA_KEY_FULLPATH}" -I "${GITHUB_ACCOUNT}" \
-         -O "extension:login@github.com=${GITHUB_ACCOUNT}" "${LOCAL_SSH_KEYFILE}.pub"
+      header "Signing user ${GITHUB_USER_ACCOUNT} public key file ${LOCAL_SSH_KEYFILE} ..."
+      ssh-keygen -s "${VAULT_CA_KEY_FULLPATH}" -I "${GITHUB_USER_ACCOUNT}" \
+         -O "extension:login@github.com=${GITHUB_USER_ACCOUNT}" "${LOCAL_SSH_KEYFILE}.pub"
          # RESPONSE: Signed user key test-ssh-cert.pub: id "wilson-mar" serial 0 valid forever
 
       SSH_CERT_PUB_KEYFILE="${LOCAL_SSH_KEYFILE}-cert.pub"
@@ -2688,31 +2687,31 @@ if [ USE_ALWAYS = true ]; then
          note "$( ls -al ${SSH_CERT_PUB_KEYFILE} )"
       fi
       # According to https://help.github.com/en/github/setting-up-and-managing-organizations-and-teams/about-ssh-certificate-authorities
-      # To issue a certificate for someone who has different usernames for GitHub Enterprise Server and GitHub Enterprise Cloud, 
+      # To issue a certificate for someone who has different usernames for GitHub Enterprise Server and GitHub Enterprise Cloud,
       # you can include two login extensions:
       # ssh-keygen -s ./ca-key -I KEY-IDENTITY \
       #    -O extension:login@github.com=CLOUD-USERNAME extension:login@
    fi  # USE_VAULT
 
    if [ "${USE_VAULT}" = false ]; then   # -HV
-      h2 "Use GitHub extension to sign user public key with 1d Validity for ${GITHUB_ACCOUNT} ..."
-      ssh-keygen -s "${VAULT_CA_KEY_FULLPATH}" -I "${GITHUB_ACCOUNT}" \
-         -O "extension:login@github.com=${GITHUB_ACCOUNT}" -V '+1d' "${LOCAL_SSH_KEYFILE}.pub"
+      header "Use GitHub extension to sign user public key with 1d Validity for ${GITHUB_USER_ACCOUNT} ..."
+      ssh-keygen -s "${VAULT_CA_KEY_FULLPATH}" -I "${GITHUB_USER_ACCOUNT}" \
+         -O "extension:login@github.com=${GITHUB_USER_ACCOUNT}" -V '+1d' "${LOCAL_SSH_KEYFILE}.pub"
          # 1m = 1minute, 1d = 1day
          # -n user1 user1.pub
          # RESPONSE: Signed user key test-ssh-cert.pub: id "wilsonmar" serial 0 valid from 2020-05-23T12:59:00 to 2020-05-24T13:00:46
    fi
 
    popd  # from "$HOME/.ssh"
-   h2 "Back into $( $PWD ) ..."
+   header "Back into $( $PWD ) ..."
 
    if [ "${OPEN_APP}" = true ]; then   # -o
-      h2 "Verify access to GitHub.com using SSH ..."
+      header "Verify access to GitHub.com using SSH ..."
       # To avoid RESPONSE: PTY allocation request failed on channel 0
       # Ensure that "PermitTTY no" is in ~/.ssh/authorized_keys (on servers to contain id_rsa.pub)
       # See https://bobcares.com/blog/pty-allocation-request-failed-on-channel-0/
 
-      h2 "Verify use of Vault SSH cert ..."
+      header "Verify use of Vault SSH cert ..."
       ssh git@github.com  # -vvv  (ssh automatically uses `test-ssh-cert.pub` file)
       # RESPONSE: Hi wilsonmar! You've successfully authenticated, but GitHub does not provide shell access.
              # Connection to github.com closed.
@@ -2727,7 +2726,7 @@ fi  # USE_ALWAYS, USE_VAULT
 # See https://wilsonmar.github.io/mac-setup/#UseHashiVault
 if [ "${USE_VAULT}" = true ]; then   # -HV
 
-   h2 "-HV (HashicorpVault) being used ..."
+   header "-HV (HashicorpVault) being used ..."
       # See https://learn.hashicorp.com/vault/getting-started/install for install video
           # https://learn.hashicorp.com/vault/secrets-management/sm-versioned-kv
           # https://www.vaultproject.io/api/secret/kv/kv-v2.html
@@ -2766,22 +2765,22 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
    ### 33b. -Golang RUN_GOLANG
    if [ "${RUN_GOLANG}" = true ]; then  # -Golang
       if [ "${PACKAGE_MANAGER}" = "brew" ]; then
-         h2 "Installing govaultenv ..."
+         header "Installing govaultenv ..."
          # https://github.com/jamhed/govaultenv  RUN_GOLANG
          if ! command -v govaultenv >/dev/null; then  # command not found, so:
-            h2 "Brew installing govaultenv ..."
+            header "Brew installing govaultenv ..."
             brew tap jamhed/govaultenv https://github.com/jamhed/govaultenv
             brew install govaultenv
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Brew upgrading govaultenv ..."
+               header "Brew upgrading govaultenv ..."
                brew tap jamhed/govaultenv https://github.com/jamhed/govaultenv
                brew upgrade jamhed/govaultenv/govaultenv
             fi
          fi
          note "govaultenv $( govaultenv | grep version | cut -d' ' -f1 )"
             # version:0.1.2 commit:d7754e38bb855f6a0c0c259ee2cced29c86a4da5 build by:goreleaser date:2019-11-13T19:47:16Z
-      #elif for Alpine? 
+      #elif for Alpine?
       elif [ "${PACKAGE_MANAGER}" = "apt-get" ]; then
          silent-apt-get-install "govaultenv"  # please test
       elif [ "${PACKAGE_MANAGER}" = "yum" ]; then    # For Redhat distro:
@@ -2794,7 +2793,7 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
       fi  # Brew
    fi  # RUN_GOLANG
 
-   
+
    ### 33c. Define VAULT_ADDR from VAULT_HOST
    if [ -z "${VAULT_HOST}" ]; then  # it's blank:
       export VAULT_HOST="localhost"
@@ -2803,14 +2802,14 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
    fi
 
    if [ -n "${VAULT_HOST}" ]; then  # var filled
-      if ping -c 1 "${VAULT_HOST}" &> /dev/null ; then 
+      if ping -c 1 "${VAULT_HOST}" &> /dev/null ; then
          note "ping of ${VAULT_HOST} went fine."
       else
          error "${VAULT_HOST} ICMP ping failed. Aborting ..."
          info  "Is VPN (GlobalProtect) enabled for your account?"
          exit
       fi
-   else 
+   else
       fatal "No VAULT_HOST, no VAULT_ADD, no work!"
       exit
    fi  # VAULT_HOST
@@ -2823,10 +2822,10 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
 
    if [ "${RUN_DEBUG}" = true ]; then
       if [ -n "${VAULT_ADDR}" ]; then  # filled
-   
+
             # Output to JSON instead & use jq to parse?
             # See https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
-         h2 "vault status ${VAULT_ADDR} ..."
+         header "vault status ${VAULT_ADDR} ..."
          RESPONSE="$( vault status 2>&2)"  # capture STDERR output to &1 (STDOUT)
             # Key                    Value
             # ---                    -----
@@ -2863,21 +2862,21 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
       note "Test PSID=$PSID"
 
       if [ -n "${PSID}" ]; then  # does not exist:
-         h2 "Start up local Vault ..."
+         header "Start up local Vault ..."
          # CAUTION: Vault dev server is insecure and stores all data in memory only!
 
-         if [ "${DELETE_BEFORE}" = true ]; then  # -d 
+         if [ "${DELETE_BEFORE}" = true ]; then  # -d
             note "Stopping existing vault local process ..."  # https://learn.hashicorp.com/vault/getting-started/dev-server
             ps_kill "${PS_NAME}"  # bash function defined in this file.
          fi
 
          note "Starting $VAULT_ADDR ..."  # https://learn.hashicorp.com/vault/getting-started/dev-server
          note "THIS SCRIPT PAUSES HERE. OPEN ANOTHER TERMINAL SESSION. Press control+C to stop service."
-         # TODO: tee 
+         # TODO: tee
          vault server -dev  -dev-root-token-id=\"root\"
 
-         # Manually copy Root Token: Root Token: s.ibP35DXQmHwDHc1NweL8dbrA 
-         # and create a 
+         # Manually copy Root Token: Root Token: s.ibP35DXQmHwDHc1NweL8dbrA
+         # and create a
 
          #UNSEAL_KEY="$( echo "${RESPONSE}" | grep -o 'Unseal Key: [^, }]*' | sed 's/^.*: //' )"
          #VAULT_DEV_ROOT_TOKEN_ID="$( echo "${RESPONSE}" | grep -o 'Root Token: [^, }]*' | sed 's/^.*: //' )"
@@ -2887,7 +2886,7 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
          # Error checking seal status: Get "http://127.0.0.1:8200/v1/sys/seal-status": dial tcp 127.0.0.1:8200: connect: connection refuse
 
       else  # USE_TEST_SERVER}" = true
-         h2 "Making use of \"${PS_NAME}\" as PSID=${PSID} ..."
+         header "Making use of \"${PS_NAME}\" as PSID=${PSID} ..."
          # See https://www.vaultproject.io/docs/secrets/ssh/signed-ssh-certificates.html
          # And https://grantorchard.com/securing-github-access-with-hashicorp-vault/
          # From -secrets opening ~/.secrets.zsh :
@@ -2900,7 +2899,7 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
 
          export SSH_CLIENT_SIGNER_PATH="ssh-client-signer"
          # Assuming Vault was enabled earlier in this script.
-         h2 "Create SSH CA ..."
+         header "Create SSH CA ..."
          vault secrets enable -path="${SSH_CLIENT_SIGNER_PATH}"  ssh
          vault write "${SSH_CLIENT_SIGNER_PATH}/config/ca"  generate_signing_key=true
 
@@ -2922,7 +2921,7 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
             code "${SSH_ROLE_FILENAME}"
          fi
 
-         h2 "Create user role ${SSH_USER_ROLE} with GH mapping ..."
+         header "Create user role ${SSH_USER_ROLE} with GH mapping ..."
          vault write "${SSH_CLIENT_SIGNER_PATH}/roles/${SSH_USER_ROLE}" "@${SSH_ROLE_FILENAME}"
 
       fi  # PSID for vault exists
@@ -2933,27 +2932,27 @@ if [ "${USE_VAULT}" = true ]; then   # -HV
    # on either test or prod Vault instance:
    # export VAULT_USERNAME="devservermode"  # custom specified
    if [ -n "${VAULT_USERNAME}" ]; then  # is not empty
-      h2 "VAULT_USERNAME=${VAULT_USERNAME}  (token hidden for security)"
+      header "VAULT_USERNAME=${VAULT_USERNAME}  (token hidden for security)"
       if [ -n "${VAULT_USER_TOKEN}" ]; then
-          h2 "Vault login using VAULT_USER_TOKEN ..."
+          header "Vault login using VAULT_USER_TOKEN ..."
           vault login -format json -method=okta \
              username="${VAULT_USERNAME}" passcode="${VAULT_USER_TOKEN}" | \
              jq -r '"\tUsername: " + .auth.metadata.username + "\n\tPolicies: " + .auth.metadata.policies + "\n\tLease time: " + (.auth.lease_duration|tostring)'
       else
-         h2 "Vault okta login as \"${VAULT_USERNAME}\" (manually confirm on Duo) ..."
+         header "Vault okta login as \"${VAULT_USERNAME}\" (manually confirm on Duo) ..."
          /usr/bin/expect -f - <<EOD
-spawn vault login -method=okta username="${VAULT_USERNAME}" 
+spawn vault login -method=okta username="${VAULT_USERNAME}"
 expect "Password (will be hidden):"
 send "${VAULT_PASSWORD}\n"
 EOD
          echo -e "\n"  # force line break exiting program.
 
       # Get token: https://www.idkrtm.com/hashicorp-vault-managing-tokens/
-      #h2 "Create token and set current session to use that token ..."
+      #header "Create token and set current session to use that token ..."
       #VAULT_USER_TOKEN=$(vault token-create -ttl="1h" -format=json | jq -r '.auth' | jq -r '.client_token')
 
       fi   # VAULT_USER_TOKEN
-   
+
          # Success! You are now authenticated. The token information displayed below
          # is already stored in the token helper. You do NOT need to run "vault login"
          # again. Future Vault requests will automatically use this token.
@@ -2966,16 +2965,16 @@ EOD
          # token_policies         ["default" "team/githu" "vault/pki"]
          # identity_policies      []
          # policies               ["default" "team/gihubne" "vault/pki"]
-         # token_meta_policies    
+         # token_meta_policies
          # token_meta_username    xxx.com
          # https://help.github.com/en/github/setting-up-and-managing-organizations-and-teams/managing-your-organizations-ssh-certificate-authorities
          # https://help.github.com/en/github/setting-up-and-managing-organizations-and-teams/about-ssh-certificate-authorities
 
       # See https://vaultproject.io/docs/secrets/ssh/signed-ssh-certificates
 
-      h2 "pushd into ~/.ssh"
+      header "pushd into ~/.ssh"
       pushd  "$HOME/.ssh"
-      h2 "At temporary $PWD ..."
+      header "At temporary $PWD ..."
       if [ "${RUN_DEBUG}" = true ]; then  # -vv
          note "$( ls -al )"
       fi
@@ -2983,12 +2982,12 @@ EOD
          # TODO: [10:47] by Roman
       #      VAULT_ENGINE="github/ssh"
       #      VAULT_POLICY="$VAULT_ENGINE/${GITHUB_USERNAME}"
-      #      h2 "Vault write policy for \"$VAULT_ENGINE/${GITHUB_USERNAME}\" ..."
-      #      cat <<EOT | vault policy write "${VAULT_POLICY}" - 
+      #      header "Vault write policy for \"$VAULT_ENGINE/${GITHUB_USERNAME}\" ..."
+      #      cat <<EOT | vault policy write "${VAULT_POLICY}" -
       #path "${VAULT_ENGINE}/sign/* {
       #   capabilities - ["create", "read', "update", "delete", "list"]
       #}
-      #EOT 
+      #EOT
       if [ ! -f "${LOCAL_SSH_KEYFILE}.pub" ]; then
          fatal "${LOCAL_SSH_KEYFILE}.pub not found!"
          exit 9
@@ -2998,7 +2997,7 @@ EOD
 
       rm -f "$HOME/.ssh/${LOCAL_SSH_KEYFILE}-cert.pub"
 
-      h2 "Sign user public certificate ..."
+      header "Sign user public certificate ..."
       export SSH_CLIENT_SIGNER_PATH="github/ssh"
       #echo "SSH_CLIENT_SIGNER_PATH=${SSH_CLIENT_SIGNER_PATH}"
       #echo "VAULT_USERNAME=${VAULT_USERNAME}"
@@ -3013,7 +3012,7 @@ EOD
          "public_key=@./${LOCAL_SSH_KEYFILE}.pub" \
          | tee "${SSH_CERT_PUB_KEYFILE}.pub"
 
-      h2 "Inspect ${SSH_CERT_PUB_KEYFILE} ..."
+      header "Inspect ${SSH_CERT_PUB_KEYFILE} ..."
       if [ ! -f "${SSH_CERT_PUB_KEYFILE}.pub" ]; then
          fatal "${SSH_CERT_PUB_KEYFILE}.pub not found!"
          exit 9
@@ -3022,9 +3021,9 @@ EOD
       fi
 
       popd  # from "$HOME/.ssh"
-      h2 "Back into $( $PWD ) ..."
+      header "Back into $( $PWD ) ..."
    else
-      h2 "No VAULT_USERNAME"
+      header "No VAULT_USERNAME"
    fi  # VAULT_USERNAME
 fi  # USE_VAULT
 
@@ -3037,7 +3036,7 @@ if [ "${VAULT_PUT}" = true ]; then  # -n
    note -e "\n"
    # Make CLI calls to the kv secrets engine for key/value pair:
    vault kv put secret/hello vault="${VAULT_USERNAME}"
-      
+
    note -e "\n Get secret/hello text ..."
    note -e "\n"
    vault kv get secret/hello  # to system variable for .py program.
@@ -3064,14 +3063,14 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
 
    # If VAULT is used:
 
-   # h2 "Install -node"
+   # header "Install -node"
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
       if ! command -v node ; then
-         h2 "Installing node ..."
+         header "Installing node ..."
          brew install node
       else
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Upgrading node ..."
+            header "Upgrading node ..."
             brew upgrade node
          fi
       fi
@@ -3079,24 +3078,24 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
    note "Node version: $( node --version )"   # v13.8.0
    note "npm version:  $( npm --version )"    # 6.13.7
 
-   h2 "After git clone https://github.com/wesbos/Learn-Node.git ..."
+   header "After git clone https://github.com/wesbos/Learn-Node.git ..."
    pwd
    if [ ! -d "starter-files" ]; then   # not found
       fatal  "starter-files folder not found. Aborting..."
       exit 9
    else
       # within repo:
-      # cd starter-files 
+      # cd starter-files
       cd "stepped-solutions/45 - Finished App"
-      h2 "Now at folder path $PWD ..."
+      header "Now at folder path $PWD ..."
       ls -1
 
       if [ "${CLONE_GITHUB}" = true ]; then   # -clone specified:
-   
-         h2 "npm install ..."
+
+         header "npm install ..."
              npm install   # based on properties.json
 
-         h2 "npm audit fix ..."
+         header "npm audit fix ..."
              npm audit fix
       fi
    fi
@@ -3108,7 +3107,7 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
 
 
    if [ ! -f "variables.env" ]; then   # not created
-      h2 "Downloading variables.env ..."
+      header "Downloading variables.env ..."
       # Alternative: Copy from your $HOME/.secrets.env file
       curl -s -O https://raw.githubusercontent.com/wesbos/Learn-Node/master/starter-files/variables.env.sample \
          variables.env
@@ -3121,12 +3120,12 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
    # Instead of https://www.mongodb.com/cloud/atlas/mongodb-google-cloud
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
       if ! command -v mongo ; then  # command not found, so:
-         h2 "Installing mmongodb-compass@4.2 ..."
+         header "Installing mmongodb-compass@4.2 ..."
          brew tap mongodb/brew
          brew install mongodb-compass@4.2
       else  # installed already:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Re-installing mongodb-compass@4.2 ..."
+            header "Re-installing mongodb-compass@4.2 ..."
             brew untap mongodb/brew && brew tap mongodb/brew
             brew install mongodb-compass@4.2
          fi
@@ -3134,20 +3133,20 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
    # elif other operating systems:
    fi
    # Verify whether MongoDB is running, search for mongod in your running processes:
-   note "$( mongo --version | grep MongoDB )"    # 3.4.0 in video. MongoDB shell version v4.2.3 
+   note "$( mongo --version | grep MongoDB )"    # 3.4.0 in video. MongoDB shell version v4.2.3
 
       if [ ! -d "/Applications/mongodb Compass.app" ]; then  # directory not found:
-         h2 "Installing cask mongodb-compass ..."
+         header "Installing cask mongodb-compass ..."
          brew install --cask mongodb-compass
             # Downloading https://downloads.mongodb.com/compass/mongodb-compass-1.20.5-darwin-x64.dmg
       else  # installed already:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Re-installing cask mongodb-compass ..."
+            header "Re-installing cask mongodb-compass ..."
             brew cask uninstall mongodb-compass
          fi
       fi
 
-   h2 "TODO: Configuring MongoDB $MONGO_DB_NAME [4:27] ..."
+   header "TODO: Configuring MongoDB $MONGO_DB_NAME [4:27] ..."
    replace_1config () {
       file=$1
       var=$2
@@ -3182,7 +3181,7 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
       sleep 2
    }
    if [ -z "${MONGO_PSID}" ]; then  # found
-      h2 "Shutting down mongoDB ..."
+      header "Shutting down mongoDB ..."
       # See https://docs.mongodb.com/manual/tutorial/manage-mongodb-processes/
       # DOESN'T WORK: mongod --shutdown
       sudo kill -2 "${MONGO_PSID}"
@@ -3190,7 +3189,7 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
          # No response expected.
       sleep 2
    fi
-      h2 "Start MongoDB as a background process ..."
+      header "Start MongoDB as a background process ..."
       mongod --config /usr/local/etc/mongod.conf --fork
          # ADDITIONAL: --port 27017 --replSet replset --logpath ~/log/mongo.log
          # about to fork child process, waiting until server is ready for connections.
@@ -3204,7 +3203,7 @@ if [ "${NODE_INSTALL}" = true ]; then  # -js
       # sudo mongod &
          # RESPONSE EXAMPLE: [1] 10318
 
-   h2 "List last lines for status of mongod process ..." 
+   header "List last lines for status of mongod process ..."
    tail -5 /usr/local/var/log/mongodb/mongo.log
 
 fi # if [ "${NODE_INSTALL}
@@ -3217,9 +3216,9 @@ fi # if [ "${NODE_INSTALL}
 if [ "${RUN_VIRTUALENV}" = true ]; then  # -V  (not the default pipenv)
 
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
-      h2 "brew install -python"
+      header "brew install -python"
       if ! command -v python3 ; then
-         h2 "Installing python3 ..."
+         header "Installing python3 ..."
          brew install python3
       fi
 
@@ -3227,7 +3226,7 @@ if [ "${RUN_VIRTUALENV}" = true ]; then  # -V  (not the default pipenv)
       # to create isolated Python environments.
       #pipenv install virtualenvwrapper
       if ! command -v virtualenv ; then
-         h2 "brew install virtualenv"  # https://levipy.com/virtualenv-and-virtualenvwrapper-tutorial
+         header "brew install virtualenv"  # https://levipy.com/virtualenv-and-virtualenvwrapper-tutorial
          brew install virtualenv
       fi
 
@@ -3241,18 +3240,18 @@ if [ "${RUN_VIRTUALENV}" = true ]; then  # -V  (not the default pipenv)
       if [ -d "venv" ]; then   # venv folder already there:
          note "venv folder being re-used ..."
       else
-         h2 "virtualenv venv ..."
+         header "virtualenv venv ..."
       fi
 
-      h2 "source venv/bin/activate"
+      header "source venv/bin/activate"
       # shellcheck disable=SC1091 # Not following: venv/bin/activate was not specified as input (see shellcheck -x).
       source venv/bin/activate
 
       # RESPONSE=$( python3 -c "import sys; print(sys.version)" )
       RESPONSE=$( python3 -c "import sys, os; is_conda = os.path.exists(os.path.join(sys.prefix, 'conda-meta'))" )
-      h2 "Within (venv) Python3: "
+      header "Within (venv) Python3: "
       # echo "${RESPONSE}"
-     
+
    if [ -f "requirements.txt" ]; then
       # Created by command pip freeze > requirements.txt previously.
       # see https://medium.com/@boscacci/why-and-how-to-make-a-requirements-txt-f329c685181e
@@ -3267,17 +3266,17 @@ fi   # RUN_VIRTUALENV means Pipenv default
 # See https://wilsonmar.github.io/mac-setup/#VirtualPyenv
 if [ "${USE_PYENV}" = true ]; then  # -pyenv
 
-   h2 "Use Pipenv by default (not overrided by -Virtulenv)"
+   header "Use Pipenv by default (not overrided by -Virtulenv)"
    # https://www.activestate.com/blog/how-to-build-a-ci-cd-pipeline-for-python/
 
    # pipenv commands: https://pipenv.kennethreitz.org/en/latest/cli/#cmdoption-pipenv-rm
    note "pipenv in $( pipenv --where )"
       # pipenv in /Users/wilson_mar/projects/python-samples
    # pipenv --venv  # no such option¶
-   
+
    note "$( pipenv --venv || true )"
 
-   #h2 "pipenv lock --clear to flush the pipenv cache"
+   #header "pipenv lock --clear to flush the pipenv cache"
    #pipenv lock --clear
 
    # If virtualenvs exists for repo, remove it:
@@ -3295,7 +3294,7 @@ if [ "${USE_PYENV}" = true ]; then  # -pyenv
    RESPONSE="$( find "${PIPENV_PATH}" -type d -name *"${PROJECT_FOLDER_NAME}"* )"
    if [ -n "${RESPONSE}" ]; then  # found somethiNg:
       note "${RESPONSE}"
-      if [ "${DELETE_BEFORE}" = true ]; then  # -d 
+      if [ "${DELETE_BEFORE}" = true ]; then  # -d
          pipenv --rm
             # Removing virtualenv (/Users/wilson_mar/.local/share/virtualenvs/bash-8hDxYnPf)…
             # or "No virtualenv has been created for this project yet!  Aborted!
@@ -3303,14 +3302,14 @@ if [ "${USE_PYENV}" = true ]; then  # -pyenv
          # pipenv clean  # creates a virtualenv
             # uninistall all dev dependencies and their dependencies:
 
-         pipenv_install   # 
+         pipenv_install   #
       else
-         h2 "TODO: pipenv using current virtualenv ..."
+         header "TODO: pipenv using current virtualenv ..."
       fi
    else  # no env found, so ...
-      h2 "Creating pipenv - no previous virtualenv ..."
-      PYTHONPATH='.' pipenv run python main.py    
-   fi 
+      header "Creating pipenv - no previous virtualenv ..."
+      PYTHONPATH='.' pipenv run python main.py
+   fi
 
 fi    # USE_PYENV
 
@@ -3320,10 +3319,10 @@ fi    # USE_PYENV
 # See https://betterprogramming.pub/how-to-use-miniconda-with-python-and-jupyterlab-5ce07845e818
 if [ "${RUN_CONDA}" = true ]; then  # -conda
 
-   h2 "-conda RUN_CONDA "
+   header "-conda RUN_CONDA "
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
       if ! command -v conda ; then
-         h2 "brew install miniconda ..."
+         header "brew install miniconda ..."
          brew install miniconda
       fi
    fi
@@ -3335,8 +3334,8 @@ if [ "${RUN_CONDA}" = true ]; then  # -conda
       #     active env location : /opt/homebrew/Caskroom/miniconda/base
       #             shell level : 1
       #        user config file : /Users/wilsonmar/.condarc
-      #  populated config files : 
-      #           conda version : 4.11.0      
+      #  populated config files :
+      #           conda version : 4.11.0
    fi
    #export PREFIX="/usr/local/anaconda3"
    #export   PATH="/usr/local/anaconda3/bin:$PATH"
@@ -3352,7 +3351,7 @@ if [ "${RUN_CONDA}" = true ]; then  # -conda
    export CONDA_ENV="jpy39"
 
    RESPONSE="$( conda info --envs )"
-         # conda environments: 
+         # conda environments:
          # base                  *  /opt/homebrew/Caskroom/miniconda/base   fi
          # jpy39                 *  /opt/homebrew/Caskroom/miniconda/base/envs/jpy39
    if [[ "${RESPONSE}" == *"${CONDA_ENV}"* ]]; then  # contains it:
@@ -3365,7 +3364,7 @@ if [ "${RUN_CONDA}" = true ]; then  # -conda
    fi
    conda activate "${CONDA_ENV}"
       # (jyp39) should show above the prompt.
-   
+
 
    # Check if already installed:
    RESPONSE="$( conda list )"
@@ -3399,11 +3398,11 @@ if [ "${RUN_CONDA}" = true ]; then  # -conda
 fi  # RUN_CONDA
 
 
-### 39. RUN_GOLANG  
+### 39. RUN_GOLANG
 # See https://wilsonmar.github.io/golang
 # See https://wilsonmar.github.io/mac-setup/#Golang
 if [ "${RUN_GOLANG}" = true ]; then  # -Golang
-   h2 "Installing Golang using brew ..."
+   header "Installing Golang using brew ..."
    brew install golang
 
    # It’s considered best practice to use $HOME/go folder for your workspace!
@@ -3426,7 +3425,7 @@ if [ "${RUN_GOLANG}" = true ]; then  # -Golang
       # fatal: repository 'https://github.com/golang/gofmt/' not found
       # package github.com/golang/gofmt/gofmt: exit status 128
    # gofmt -w test1.go
-   
+
    # go get -u github.com/golang/lint/golint
       # ERROR: package github.com/golang/lint/golint: code in directory /Users/wilson_mar/gopkgs/src/github.com/golang/lint/golint expects import "golang.org/x/lint/golint"
    # golint
@@ -3453,7 +3452,7 @@ if [ "${RUN_GOLANG}" = true ]; then  # -Golang
       # HTTP request sent, awaiting response... 404 Not Found
       # 2020-06-24 07:28:20 ERROR 404: Not Found.
 
-   # The file will be in the current folder where you run the command 
+   # The file will be in the current folder where you run the command
    # and you can check the checksum like this
    #echo "check sum from the check sum file>  gosec_vX.Y.Z_OS.tar.gz" | sha256sum -c -
    #gosec --help
@@ -3494,7 +3493,7 @@ if [ "${RUN_PYTHON}" = true ]; then  # -python
       exit 9
    fi
 
-   h2 "-Good Python ${PYTHON_SEMVER} running ${MY_FILE} ${RUN_PARMS} ..."
+   header "-Good Python ${PYTHON_SEMVER} running ${MY_FILE} ${RUN_PARMS} ..."
 
 # while debugging:
 #         if [ ! -f "Pipfile" ]; then  # file not found:
@@ -3505,22 +3504,22 @@ if [ "${RUN_PYTHON}" = true ]; then  # -python
    # TRICK: Determine if a Python module was installed:
    RESPONSE="$( python -c 'import pkgutil; print(1 if pkgutil.find_loader("pylint") else 0)' )"
    if [ "${RESPONSE}" = 0 ]; then
-      h2 "Installing pylint code scanner ..." 
+      header "Installing pylint code scanner ..."
       # See https://pylint.pycqa.org/en/latest/ and https://www.python.org/dev/peps/pep-0008/
       python3 -m pip install pylint
       command -v pylint   # https://stackoverflow.com/questions/43272664/linter-pylint-is-not-installed
    else  # RESPONSE=1
       if [ "${UPDATE_PKGS}" = true ]; then
-         h2 "Upgrading pylint ..."
+         header "Upgrading pylint ..."
          python3 -m pip install pylint --upgrade
       fi
    fi
-      h2 "Running pylint scanner on -file ${MY_FILE} ..."
+      header "Running pylint scanner on -file ${MY_FILE} ..."
       # TRICK: Route console output to a temp folder for display only on error:
       pylint "${MY_FILE}" 1>pylint.console.log  2>pylint.err.log
       STATUS=$?
       if ! [ "${STATUS}" = "0" ]; then  # NOT good
-         if [ "${CONTINUE_ON_ERR}" = true ]; then  # -cont
+         if [ "${SET_CONTINUE_ON_ERROR}" = true ]; then  # -cont
             warning "Pylint found ${STATUS} blocking issues, being ignored."
          else
             fatal "pylint found issues : ${STATUS} "
@@ -3535,22 +3534,22 @@ if [ "${RUN_PYTHON}" = true ]; then  # -python
 
    RESPONSE="$( python -c 'import pkgutil; print(1 if pkgutil.find_loader("flake8") else 0)' )"
    if [ "${RESPONSE}" = 0 ]; then
-      h2 "Installing flake8 PEP8 code formatting scanner ..." 
+      header "Installing flake8 PEP8 code formatting scanner ..."
       # See https://flake8.pycqa.org/en/latest/ and https://www.python.org/dev/peps/pep-0008/
       python3 -m pip install flake8
    else
       if [ "${UPDATE_PKGS}" = true ]; then
-         h2 "Upgrading flake8 ..."
+         header "Upgrading flake8 ..."
          python3 -m pip install flake8 --upgrade
       fi
    fi
 
-   h2 "Running flake8 Pip8 code formatting scanner on ${MY_FILE} ..."
+   header "Running flake8 Pip8 code formatting scanner on ${MY_FILE} ..."
    flake8 "${MY_FILE}"
    flake8 "${MY_FILE}" 1>flake8.console.log  2>flake8.err.log
    STATUS=$?
    if ! [ "${STATUS}" = "0" ]; then  # NOT good
-      if [ "${CONTINUE_ON_ERR}" = true ]; then  # -cont
+      if [ "${SET_CONTINUE_ON_ERROR}" = true ]; then  # -cont
          warning "Pylint found ${STATUS} blocking issues, being ignored."
       else
          fatal "pylint found issues : ${STATUS} "
@@ -3565,16 +3564,16 @@ if [ "${RUN_PYTHON}" = true ]; then  # -python
 
    RESPONSE="$( python -c 'import pkgutil; print(1 if pkgutil.find_loader("bandit") else 0)' )"
    if [ "${RESPONSE}" = 0 ]; then
-      h2 "Installing Bandit secure Python coding scanner ..."
+      header "Installing Bandit secure Python coding scanner ..."
       # See https://pypi.org/project/bandit/
       python3 -m pip install bandit
    else
       if [ "${UPDATE_PKGS}" = true ]; then
-         h2 "Upgrading flake8 ..."
+         header "Upgrading flake8 ..."
          python3 -m pip install bandit --upgrade
       fi
    fi
-      h2 "Running Bandit secure Python coding scanner ..."  
+      header "Running Bandit secure Python coding scanner ..."
       # See https://developer.rackspace.com/blog/getting-started-with-bandit/
       # TRICK: Route console output to a temp folder for display only on error:
       bandit -r "${MY_FILE}" 1>bandit.console.log  2>bandit.err.log
@@ -3591,18 +3590,18 @@ if [ "${RUN_PYTHON}" = true ]; then  # -python
 
 
    # Run a different way than with Pipfile:
-   h2 "Running Python file ${MY_FILE} ${RUN_PARMS} ..."
+   header "Running Python file ${MY_FILE} ${RUN_PARMS} ..."
    python3 "${MY_FILE}" "${RUN_PARMS}"
 
 #      fi   # Pipfile
 
    # Instead of https://www.jetbrains.com/pycharm/download/other.html
    if [ ! -d "/Applications/mongodb Compass.app" ]; then  # directory not found:
-      h2 "brew install --cask PyCharm.app ..."
+      header "brew install --cask PyCharm.app ..."
       brew install --cask pycharm
    else  # installed already:
       if [ "${UPDATE_PKGS}" = true ]; then
-         h2 "brew cask upgrade PyCharm.app ..."
+         header "brew cask upgrade PyCharm.app ..."
          brew cask upgrade pycharm
       fi
    fi
@@ -3625,11 +3624,11 @@ if [ "${RUN_TERRAFORM}" = true ]; then  # -tf
          # mkidr -p "/tmp"
          export TF_LOG_PATH="tmp.tf.debug.${LOG_DATETIME}.txt"
       fi
-      h2 "Running Terraform with TF_LOG=DEBUG to ${TF_LOG_PATH} ..."
+      header "Running Terraform with TF_LOG=DEBUG to ${TF_LOG_PATH} ..."
       # https://www.khalidjhosein.net/2018/12/terraform-tips-and-tricks/
       export TF_LOG=DEBUG
    else
-      h2 "Running Terraform with TF_LOG file unset ..."
+      header "Running Terraform with TF_LOG file unset ..."
       unset TF_LOG
    fi
 echo "DEBUGGING TF"; exit
@@ -3669,30 +3668,30 @@ if [ "${RUN_TENSORFLOW}" = true ]; then  # -tsf
 
       # Included in conda/anaconda: jupyterlab & matplotlib
 
-      h2 "installing tensorflow, tensorboard ..."
+      header "installing tensorflow, tensorboard ..."
       # TODO: convert to use pipenv instead?
       pip3 install --upgrade tensorflow   # includes https://pypi.org/project/tensorboard/
-      h2 "pip3 show tensorflow"
+      header "pip3 show tensorflow"
       pip3 show tensorflow
 
-      # h2 "Install cloudinary Within requirements.txt : "
+      # header "Install cloudinary Within requirements.txt : "
       # pip install cloudinary
       #if ! command -v jq ; then
-      #   h2 "Installing jq ..."
+      #   header "Installing jq ..."
       #   brew install jq
       #else
       #   if [ "${UPDATE_PKGS}" = true ]; then
-      #      h2 "Upgrading jq ..."
-      #      brew --upgrade --force-reinstall jq 
+      #      header "Upgrading jq ..."
+      #      brew --upgrade --force-reinstall jq
       #   fi
       #fi
       # /usr/local/bin/jq
 
-   h2 "ipython kernel install --user --name=.venv"
+   header "ipython kernel install --user --name=.venv"
    ipython kernel install --user --name=venv
 
-   h2 "Starting Jupyter with Notebook $MY_FOLDER/$MY_FILE ..."
-   jupyter notebook --port 8888 "${MY_FOLDER}/${MY_FILE}" 
+   header "Starting Jupyter with Notebook $MY_FOLDER/$MY_FILE ..."
+   jupyter notebook --port 8888 "${MY_FOLDER}/${MY_FILE}"
       # & for background run
          # jupyter: open http://localhost:8888/tree
       # The Jupyter Notebook is running at:
@@ -3708,7 +3707,7 @@ fi  # if [ "${RUN_TENSORFLOW}"
 #### 43. Finish RUN_VIRTUALENV
 # See https://wilsonmar.github.io/mac-setup/#RunVirtualenv
 if [ "${RUN_VIRTUALENV}" = true ]; then  # -V
-      h2 "Execute deactivate if the function exists (i.e. has been created by sourcing activate):"
+      header "Execute deactivate if the function exists (i.e. has been created by sourcing activate):"
       # per https://stackoverflow.com/a/57342256
       declare -Ff deactivate && deactivate
          #[I 16:03:18.236 NotebookApp] Starting buffering for db5328e3-...
@@ -3722,13 +3721,13 @@ if [ "${USE_TEST_SERVER}" = true ]; then  # -t
 
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
       if ! command -v selenium ; then
-         h2 "Pip installing selenium ..."
+         header "Pip installing selenium ..."
          pip install selenium
       else
          if [ "${UPDATE_PKGS}" = true ]; then
             # selenium in /usr/local/lib/python3.7/site-packages (3.141.0)
             # urllib3 in /usr/local/lib/python3.7/site-packages (from selenium) (1.24.3)
-            h2 "Pip upgrading selenium ..."
+            header "Pip upgrading selenium ..."
             pip install -U selenium
          fi
       fi
@@ -3739,7 +3738,7 @@ if [ "${USE_TEST_SERVER}" = true ]; then  # -t
    # https://realpython.com/modern-web-automation-with-python-and-selenium/ headless
    # https://www.seleniumeasy.com/python/example-code-using-selenium-webdriver-python Windows chrome
 
-   h2 "Install drivers of Selenium on browsers"
+   header "Install drivers of Selenium on browsers"
    # First find out what version of Chrome at chrome://settings/help
    # Based on: https://sites.google.com/a/chromium.org/chromedriver/downloads
    # For 80: https://chromedriver.storage.googleapis.com/80.0.3987.106/chromedriver_mac64.zip
@@ -3754,7 +3753,7 @@ if [ "${USE_TEST_SERVER}" = true ]; then  # -t
 
    # Firefox:	https://github.com/mozilla/geckodriver/releases
       # geckodriver-v0.26.0-macos.tar expands to geckodriver
-   
+
    # reports are produced by TestNG, a plug-in to Selenium.
 
 fi # if [ "${USE_TEST_SERVER}"
@@ -3769,11 +3768,11 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then
 
       if ! command -v gnupg2 ; then
-         h2 "Installing gnupg2 ..."
+         header "Installing gnupg2 ..."
          brew install gnupg2
       else
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Upgrading gnupg2 ..."
+            header "Upgrading gnupg2 ..."
             brew upgrade gnupg2
          fi
       fi
@@ -3787,11 +3786,11 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
          # FIX: gpg: keyserver receive failed: No route to host
 
       if ! command -v imagemagick ; then
-         h2 "Installing imagemagick ..."
+         header "Installing imagemagick ..."
          brew install imagemagick
       else
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Upgrading imagemagick ..."
+            header "Upgrading imagemagick ..."
             brew upgrade imagemagick
          fi
       fi
@@ -3800,29 +3799,29 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
 
       sudo apt-get update
 
-      h2 "Use apt instead of apt-get since Ubuntu 16.04 (from Linux Mint)"
+      header "Use apt instead of apt-get since Ubuntu 16.04 (from Linux Mint)"
       sudo apt install curl git
       note "$( git --version --build-options )"
          # git version 2.20.1 (Apple Git-117), cpu: x86_64, no commit associated with this build
          # sizeof-long: 8, sizeof-size_t: 8
 
-      h2 "apt install imagemagick"
+      header "apt install imagemagick"
       sudo apt install imagemagick
 
-      h2 "sudo apt autoremove"
+      header "sudo apt autoremove"
       sudo apt autoremove
 
-      h2 "Install NodeJs to run Ruby"
+      header "Install NodeJs to run Ruby"
       curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
       silent-apt-get-install "nodejs"
 
-      h2 "Add Yarn repositories and keys (8.x deprecated) for apt-get:"
+      header "Add Yarn repositories and keys (8.x deprecated) for apt-get:"
       curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
          # response: OK
       echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
-      silent-apt-get-install "yarn" 
+      silent-apt-get-install "yarn"
 
-      h2 "Install Ruby dependencies "
+      header "Install Ruby dependencies "
       silent-apt-get-install "rbenv"   # instead of git clone https://github.com/rbenv/rbenv.git ~/.rbenv
          # Extracting templates from packages: 100%
       silent-apt-get-install "autoconf"
@@ -3834,24 +3833,24 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
       silent-apt-get-install "libncurses5-dev"
       silent-apt-get-install "libffi-dev"
          # E: Unable to locate package autoconf bison
-      silent-apt-get-install "libreadline-dev"    # instead of libreadline6-dev 
+      silent-apt-get-install "libreadline-dev"    # instead of libreadline6-dev
       silent-apt-get-install "libgdbm-dev"    # libgdbm3  # (not found)
 
       silent-apt-get-install "libpq-dev"
       silent-apt-get-install "libxml2-dev"
       silent-apt-get-install "libxslt1-dev"
       silent-apt-get-install "libcurl4-openssl-dev"
-      
-      h2 "Install SQLite3 ..."
+
+      header "Install SQLite3 ..."
       silent-apt-get-install "libsqlite3-dev"
       silent-apt-get-install "sqlite3"
 
-      h2 "Install MySQL Server"
+      header "Install MySQL Server"
       silent-apt-get-install "mysql-client"
       silent-apt-get-install "mysql-server"
       silent-apt-get-install "libmysqlclient-dev"  # unable to locate
 
-      #h2 "Install PostgreSQL ..."
+      #header "Install PostgreSQL ..."
       #silent-apt-get-install "postgres"
 
    elif [ "${PACKAGE_MANAGER}" = "yum" ]; then
@@ -3868,9 +3867,9 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
 
 
    cd ~/
-   h2 "Now at path $PWD ..."
+   header "Now at path $PWD ..."
 
-   h2 "git clone ruby-build.git to use the rbenv install command"
+   header "git clone ruby-build.git to use the rbenv install command"
    FOLDER_PATH="$HOME/.rbenv/plugins/ruby-build"
    if [   -d "${FOLDER_PATH}" ]; then  # directory found, so remove it first.
       note "Deleting ${FOLDER_PATH} ..."
@@ -3884,13 +3883,13 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
             echo "export PATH=\"$HOME/.rbenv/plugins/ruby-build/bin:$PATH\" " >>"${BASHFILE}"
             source "${BASHFILE}"
          fi
-   
+
    if ! command -v rbenv ; then
       fatal "rbenv not found. Aborting for script fix ..."
       exit 1
    fi
 
-   h2 "rbenv init"
+   header "rbenv init"
             if grep -q "rbenv init " "${BASHFILE}" ; then
                note "rbenv init  already in ${BASHFILE}"
             else
@@ -3906,7 +3905,7 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
    RUBY_VERSION="2.6"
       # To avoid rbenv: version `2.7.0' not installed
 
-   h2 "Install Ruby $RUBY_RELEASE using rbenv ..."
+   header "Install Ruby $RUBY_RELEASE using rbenv ..."
    # Check if the particular Ruby version is already installed by rbenv
    RUBY_RELEASE_RESPONSE="$( rbenv install -l | grep $RUBY_RELEASE )"
    if [ -z "$RUBY_RELEASE_RESPONSE" ]; then  # not found:
@@ -3914,26 +3913,26 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
       # Downloading ...
    fi
 
-   h2 "rbenv global"
+   header "rbenv global"
    rbenv global "${RUBY_RELEASE}"   # insted of -l (latest)
 
-   h2 "Verify ruby version"
+   header "Verify ruby version"
    ruby -v
 
-   h2 "To avoid Gem:ConfigMap deprecated in gem 1.8.x"
+   header "To avoid Gem:ConfigMap deprecated in gem 1.8.x"
    # From https://github.com/rapid7/metasploit-framework/issues/12763
    gem uninstall #etc
    # This didn't fix: https://ryenus.tumblr.com/post/5450167670/eliminate-rubygems-deprecation-warnings
    # ruby -e "`gem -v 2>&1 | grep called | sed -r -e 's#^.*specifications/##' -e 's/-[0-9].*$//'`.split.each {|x| `gem pristine #{x} -- --build-arg`}"
-   
-   h2 "gem update --system"
+
+   header "gem update --system"
    # Based on https://github.com/rubygems/rubygems/issues/3068
    # to get rid of the warnings by downgrading to the latest RubyGems that doesn't have the deprecation warning:
    sudo gem update --system   # 3.0.6
-   
+
    gem --version
-   
-   h2 "create .gemrc"  # https://www.digitalocean.com/community/tutorials/how-to-install-ruby-on-rails-with-rbenv-on-ubuntu-16-04
+
+   header "create .gemrc"  # https://www.digitalocean.com/community/tutorials/how-to-install-ruby-on-rails-with-rbenv-on-ubuntu-16-04
    if [ ! -f "$HOME/.gemrc" ]; then   # file NOT found, so create it:
       echo "gem: --no-document" > ~/.gemrc
    else
@@ -3945,17 +3944,17 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
       fi
    fi
 
-   h2 "gem install bundler"  # https://bundler.io/v1.12/rationale.html
+   header "gem install bundler"  # https://bundler.io/v1.12/rationale.html
    sudo gem install bundler   # 1.17.3 to 2.14?
    note "$( bundler --version )"  # Current Bundler version: bundler (2.1.4)
 
    # To avoid Ubuntu rails install ERROR: Failed to build gem native extension.
-   # h2 "gem install ruby-dev"  # https://stackoverflow.com/questions/22544754/failed-to-build-gem-native-extension-installing-compass
-   h2 "Install ruby${RUBY_VERSION}-dev for Ruby Development Headers native extensions ..."
+   # header "gem install ruby-dev"  # https://stackoverflow.com/questions/22544754/failed-to-build-gem-native-extension-installing-compass
+   header "Install ruby${RUBY_VERSION}-dev for Ruby Development Headers native extensions ..."
    silent-apt-get-install ruby-dev   # "ruby${RUBY_VERSION}-dev"
         # apt-get install ruby-dev
 
-   h2 "gem install rails"  # https://gorails.com/setup/ubuntu/16.04
+   header "gem install rails"  # https://gorails.com/setup/ubuntu/16.04
    sudo gem install rails    # latest at https://rubygems.org/gems/rails/versions
    if ! command -v rails ; then
       fatal "rails not found. Aborting for script fix ..."
@@ -3965,23 +3964,23 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
       # See https://rubyonrails.org/
       # 6.0.2.1 - December 18, 2019 (6.5 KB)
 
-   h2 "rbenv rehash to make the rails executable available:"  # https://github.com/rbenv/rbenv
+   header "rbenv rehash to make the rails executable available:"  # https://github.com/rbenv/rbenv
    sudo rbenv rehash
 
-   h2 "gem install rdoc (Ruby doc)"
+   header "gem install rdoc (Ruby doc)"
    sudo gem install rdoc
 
-   h2 "gem install execjs"
+   header "gem install execjs"
    sudo gem install execjs
 
-   h2 "gem install refinerycms"
+   header "gem install refinerycms"
    sudo gem install refinerycms
        # /usr/lib/ruby/include
 
-   h2 "Build refinery app"
+   header "Build refinery app"
    refinerycms "${APPNAME}"
    # TODO: pushd here instead of cd?
-      cd "${APPNAME}"   
+      cd "${APPNAME}"
 
    # TODO: Add RoR app resources from GitHub  (gem file)
    # TODO: Internationalize Refinery https://www.refinerycms.com/guides/translate-refinery
@@ -3993,15 +3992,15 @@ if [ "${RUBY_INSTALL}" = true ]; then  # -ruby
       # bin/rake spec
 
 
-   h2 "bundle install based on gem file ..."
+   header "bundle install based on gem file ..."
    bundle install
 
-   h2 "Starting rails server at ${APPNAME} ..."
+   header "Starting rails server at ${APPNAME} ..."
    cd "${APPNAME}"
    note "Now at $PWD ..."
    rails server
 
-   h2 "Opening website ..."
+   header "Opening website ..."
       curl -s -I -X POST http://localhost:3000/refinery
       curl -s       POST http://localhost:3000/ | head -n 10  # first 10 lines
 
@@ -4020,15 +4019,15 @@ if [ "${RUN_EGGPLANT}" = true ]; then  # -eggplant
    # See http://docs.eggplantsoftware.com/ePF/gettingstarted/epf-getting-started-eggplant-functional.htm
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
       if [ ! -d "/Applications/Eggplant.app" ]; then  # directory not found:
-         h2 "brew install --cask eggplant ..."
+         header "brew install --cask eggplant ..."
          brew install --cask eggplant
       else  # installed already:
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "Re-installing cask eggplant ..."
+            header "Re-installing cask eggplant ..."
             brew cask uninstall eggplant
          fi
       fi
-   fi  #  PACKAGE_MANAGER}" = "brew" 
+   fi  #  PACKAGE_MANAGER}" = "brew"
 
    if [ "${OPEN_APP}" = true ]; then  # -o
       if [ "${OS_TYPE}" = "macOS" ]; then  # it's on a Mac:
@@ -4043,13 +4042,13 @@ if [ "${RUN_EGGPLANT}" = true ]; then  # -eggplant
    if [ "${PACKAGE_MANAGER}" = "brew" ]; then # -U
       # Alternately, https://www.realvnc.com/en/connect/download/vnc/macos/
       if [ ! -d "/Applications/RealVNC/VNC Server.app" ]; then  # directory not found:
-         h2 "brew install --cask vnc-server ..."
+         header "brew install --cask vnc-server ..."
              brew install --cask vnc-server
              # Requires password
              # pop-up "vncagent" and "vncviwer" would like to control this computer using accessibility features
       else
          if [ "${UPDATE_PKGS}" = true ]; then
-            h2 "brew cask upgrade vnc-server ..."
+            header "brew cask upgrade vnc-server ..."
                 brew cask upgrade vnc-server
          fi
       fi
@@ -4069,12 +4068,12 @@ if [ "${RUN_EGGPLANT}" = true ]; then  # -eggplant
    fi
 
    # Reference: http://docs.eggplantsoftware.com/eggplant-documentation-home.htm
-          # See http://docs.eggplantsoftware.com/ePF/using/epf-running-from-command-line.htm     
+          # See http://docs.eggplantsoftware.com/ePF/using/epf-running-from-command-line.htm
 
 fi    # RUN_EGGPLANT
 
 
-### 4x. 
+### 4x.
 if [ "${USE_QEMU}" = true ]; then   # -qemu
    RESPONSE="$(podman ps -a)"
    if [[ "${RESPONSE}" == *"${/bin/qemu-system-aarch64}"* ]]; then  # contains it:
@@ -4097,12 +4096,12 @@ fi  # USE_PODMAN
 
 if [ "${USE_PODMAN}" = true ]; then   # -podman
    # https://medium.com/@davutozcan87/podman-setup-for-mac-4b1ac9cd959
-   h2 "-podman  TODO: USE_PODMAN"
+   header "-podman  TODO: USE_PODMAN"
    if ! command -v podman >/dev/null; then  # command not found, so:
       brew install podman
    fi
 
-   h2 "podman machine init ..."
+   header "podman machine init ..."
    RESPONSE=$( podman machine init )
    if [[ "${RESPONSE}" == *"${VM already exists}"* ]]; then  # contains:
       # Error: podman-machine-default: VM already exists
@@ -4110,57 +4109,57 @@ if [ "${USE_PODMAN}" = true ]; then   # -podman
       # TODO: bring down and up again without "else"?
    else
       podman machine init
-      
+
       podman ps -a
 
-      h2 "podman machine start ..."
+      header "podman machine start ..."
       # TODO: To avoid "Error: podman-machine-default: VM already exists
       podman machine start
    fi
 
-   h2 " alias docker=podman ..."
+   header " alias docker=podman ..."
    alias docker=podman
    # Verify podman is working
-   h2 "podman version ..."
+   header "podman version ..."
    note "$( docker -v )"
       # podman version 4.0.3
 
-   h2 "podman run hello-world ..."
+   header "podman run hello-world ..."
    podman run hello-world
       # !... Hello Podman World ...!
-      # 
-      #          .--"--.           
-      #        / -     - \         
-      #       / (O)   (O) \        
-      #    ~~~| -=(,Y,)=- |         
-      #     .---. /`  \   |~~      
-      #  ~/  o  o \~~~~.----. ~~   
-      #   | =(X)= |~  / (O (O) \   
-      #    ~~~~~~~  ~| =(Y_)=-  |   
-      #   ~~~~    ~~~|   U      |~~ 
-      # 
+      #
+      #          .--"--.
+      #        / -     - \
+      #       / (O)   (O) \
+      #    ~~~| -=(,Y,)=- |
+      #     .---. /`  \   |~~
+      #  ~/  o  o \~~~~.----. ~~
+      #   | =(X)= |~  / (O (O) \
+      #    ~~~~~~~  ~| =(Y_)=-  |
+      #   ~~~~    ~~~|   U      |~~
+      #
       # Project:   https://github.com/containers/podman
       # Website:   https://podman.io
       # Documents: https://docs.podman.io
       # Twitter:   @Podman_io
-      
+
    # hello-world stops on its own, so
-   h2 "docker ps ..."
+   header "docker ps ..."
    podman ps
       # CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
 
-   h2 "pip3 install podman-compose ..."
+   header "pip3 install podman-compose ..."
       # Collecting podman-compose
       #   Downloading podman_compose-1.0.3-py2.py3-none-any.whl (27 kB)
       # Collecting pyyaml
       #   Downloading PyYAML-6.0-cp39-cp39-macosx_11_0_arm64.whl (173 kB)
-      #      |████████████████████████████████| 173 kB 1.5 MB/s 
+      #      |████████████████████████████████| 173 kB 1.5 MB/s
       # Collecting python-dotenv
       #   Downloading python_dotenv-0.20.0-py3-none-any.whl (17 kB)
       # Installing collected packages: pyyaml, python-dotenv, podman-compose
       # Successfully installed podman-compose-1.0.3 python-dotenv-0.20.0 pyyaml-6.0
 
-   h2 "podman-compose up ..."
+   header "podman-compose up ..."
    podman-compose up
       # ['podman', '--version', '']
       # using podman version: 4.0.3
@@ -4176,16 +4175,16 @@ fi
 
 if [ "${USE_DOCKER}" = true ]; then   # -k
 
-   h2 "-k = USE_DOCKER install ..."
+   header "-k = USE_DOCKER install ..."
    if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I & -U
       if [ "${PACKAGE_MANAGER}" = "brew" ]; then
 
          if ! command -v docker ; then
-            h2 "Installing docker CLI ..."
+            header "Installing docker CLI ..."
             brew install docker
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading docker CLI ..."
+               header "Upgrading docker CLI ..."
                # https://www.weplayinternet.com/posts/error-it-seem-there-is-already-a-binary/
                brew remove docker
                brew install --cask docker
@@ -4194,18 +4193,18 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
          fi
 
          if ! command -v docker.app ; then
-            h2 "Installing docker ..."
+            header "Installing docker ..."
             brew install --cask docker
             # Error: It seems there is already a Binary at '/opt/homebrew/share/zsh/site-functions/_docker'.
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading docker ..."
+               header "Upgrading docker ..."
                brew upgrade --cask docker
             fi
          fi
 
          if ! command -v docker-compose ; then
-            h2 "Installing docker-compose ..."
+            header "Installing docker-compose ..."
             brew install docker-compose
             if ! command -v docker-compose >/dev/null; then
                # Compose is now a Docker plugin. For Docker to find this plugin, symlink it:
@@ -4214,27 +4213,27 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
             fi
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading docker-compose ..."
+               header "Upgrading docker-compose ..."
                brew upgrade docker-compose
             fi
          fi
 
          if ! command -v git ; then
-            h2 "Installing Git ..."
+            header "Installing Git ..."
             brew install git
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading Git ..."
+               header "Upgrading Git ..."
                brew upgrade git
             fi
          fi
 
          if ! command -v curl ; then
-            h2 "Installing Curl ..."
+            header "Installing Curl ..."
             brew install curl wget tree
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading Curl ..."
+               header "Upgrading Curl ..."
                brew upgrade curl wget tree
             fi
          fi
@@ -4242,43 +4241,43 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
        elif [ "${PACKAGE_MANAGER}" = "apt-get" ]; then
 
          if ! command -v docker ; then
-            h2 "Installing docker using apt-get ..."
+            header "Installing docker using apt-get ..."
             silent-apt-get-install "docker"
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading docker ..."
+               header "Upgrading docker ..."
                silent-apt-get-install "docker"
             fi
          fi
 
          if ! command -v docker-compose ; then
-            h2 "Installing docker-compose using apt-get ..."
+            header "Installing docker-compose using apt-get ..."
             silent-apt-get-install "docker-compose"
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading docker-compose ..."
+               header "Upgrading docker-compose ..."
                silent-apt-get-install "docker-compose"
             fi
          fi
 
       elif [ "${PACKAGE_MANAGER}" = "yum" ]; then
-      
+
          if ! command -v docker ; then
-            h2 "Installing docker using yum ..."
+            header "Installing docker using yum ..."
             sudo yum install docker
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading docker ..."
+               header "Upgrading docker ..."
                sudo yum install docker
             fi
          fi
 
          if ! command -v docker-compose ; then
-            h2 "Installing docker-compose using yum ..."
+            header "Installing docker-compose using yum ..."
             yum install docker-compose
          else
             if [ "${UPDATE_PKGS}" = true ]; then
-               h2 "Upgrading docker-compose ..."
+               header "Upgrading docker-compose ..."
                yum install docker-compose
             fi
          fi
@@ -4289,7 +4288,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
    # note "$( docker --version )"          # Docker version 19.03.5, build 633a0ea
    note "$( docker-compose --version )"  # docker-compose version 2.5.0
 
-   h2 "Starting Docker on \"${OS_TYPE}\" ..."
+   header "Starting Docker on \"${OS_TYPE}\" ..."
    Stop_Docker(){   # function
          if [ "$OS_TYPE" = "macOS" ]; then  # it's on a Mac:
             note "-restarting Docker on macOS ..."
@@ -4304,8 +4303,8 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
    Start_Docker(){   # function
       if [ "$OS_TYPE" = "macOS" ]; then  # it's on a Mac:
          note "Docker Desktop is starting on macOS ..."
-         open "$HOME/Applications/Docker.app"  # 
-         #open --background -a Docker   # 
+         open "$HOME/Applications/Docker.app"  #
+         #open --background -a Docker   #
          # /Applications/Docker.app/Contents/MacOS/Docker
       else
          note "Starting Docker daemon on Linux ..."
@@ -4316,14 +4315,14 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
       timer_start="${SECONDS}"
       # Docker Docker is starting ...
       while ( ! docker ps -q  2>/dev/null ); do
-         sleep 2  # seconds 
+         sleep 2  # seconds
          duration=$(( SECONDS - timer_start ))
          # Docker takes a few seconds to initialize (drop off if longer to updating Docker, Update, and Relaunch)
          note "${duration} seconds waiting for Docker to begin running ..."
       done
- 
+
    }  # Start_Docker
- 
+
    Remove_Dangling_Docker(){   # function
       RESPONSE="$( docker images -qf dangling=true )"
       # note "Ignore \"Error: No such image\" "
@@ -4342,7 +4341,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
    {
       docker ps -q  2>/dev/null  # -q = quiet
       # RESPONSE: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
-   } || {   # or 
+   } || {   # or
       IS_DOCKER_STARTED=false
    }
    if [ "${IS_DOCKER_STARTED}" = false ]; then
@@ -4363,21 +4362,21 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
    ### 48. RUN_ACTUAL
    if [ "${RUN_ACTUAL}" = true ]; then  # -a for actual usage
 
-      h2 "Remove dangling docker ..."
+      header "Remove dangling docker ..."
       Remove_Dangling_Docker   # function defined above.
       if [ "${BUILD_DOCKER_IMAGE}" = true ]; then   # -b
-         h2 "Building docker image (from Dockerfile) ..."
+         header "Building docker image (from Dockerfile) ..."
          docker build  #Dockerfile
       fi    # BUILD_DOCKER_IMAGE
 
 
-      #h2 "node-prune to remove unnecessary files from the node_modules folder"
+      #header "node-prune to remove unnecessary files from the node_modules folder"
          # Test files, markdown files, typing files and *.map files in Npm packages are not required in prod.
          # See https://itsopensource.com/how-to-reduce-node-docker-image-size-by-ten-times/
       #npm prune --production
 
       if [ "${USE_DOCKER_COMPOSE}" = true ]; then  # -dc
-         h2 "USE_DOCKER_COMPOSE"
+         header "USE_DOCKER_COMPOSE"
          if [ ! -f "docker-compose.yml" ]; then
             error "docker-compose.yml file not found ..."
             pwd
@@ -4390,7 +4389,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
             if [ "${STATUS}" = "0" ]; then
                warning "Docker run ended with no issues."
             else
-               if [ "${CONTINUE_ON_ERR}" = true ]; then  # -cont
+               if [ "${SET_CONTINUE_ON_ERROR}" = true ]; then  # -cont
                   warning "Docker run exit ${STATUS} error, being ignored."
                else
                   fatal "Docker run found issues : ${STATUS} "
@@ -4409,9 +4408,9 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
       else  # NOT Docker compose .yaml
 
          if [ -n "${DOCKER_IMAGE_FILE}" ]; then  # known value:
-            h2 "docker pull (image) \"${DOCKER_IMAGE_FILE}\" (from Dockerhub) as default ..."
+            header "docker pull (image) \"${DOCKER_IMAGE_FILE}\" (from Dockerhub) as default ..."
             docker pull "${DOCKER_IMAGE_FILE}"
-               # Error: No such image: 
+               # Error: No such image:
                # Using default tag: latest
                # latest: Pulling from library/vault
                # Status: Downloaded newer image for vault:latest
@@ -4422,9 +4421,9 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
             # REPOSITORY   TAG       IMAGE ID       CREATED       SIZE
             # consul       latest    58fe9fa6a8a4   3 weeks ago   128MB
       fi  # USE_DOCKER_COMPOSE
-   
+
       if [ "${RUN_VERBOSE}" = true ]; then
-         h2 "docker images downloaded, sorted by size ..."
+         header "docker images downloaded, sorted by size ..."
          # Thanks to https://tunzor.github.io/posts/docker-list-images-by-size/
          docker image ls --format "{{.Repository}}:{{.Tag}} {{.Size}}" | \
          awk '{if ($2~/GB/) print substr($2, 1, length($2)-2) * 1000 "MB - " $1 ; else print $2 " - " $1 }' | \
@@ -4436,9 +4435,9 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
       # TODO: Add run in local Kubernetes.
       ### 48. RUN_ACTUAL within Docker
       # See https://wilsonmar.github.io/mac-setup/#RunDocker
-      h2 "-a  RUN_ACTUAL ... (not dry run)"
+      header "-a  RUN_ACTUAL ... (not dry run)"
       if [ -z "${MY_FOLDER}" ]; then  # not defined:
-         note "-Folder not specified. Working on root folder ..." 
+         note "-Folder not specified. Working on root folder ..."
       else
          if [ ! -d "${MY_FOLDER}" ]; then  # not exists:
             fatal "-Folder \"${MY_FOLDER}\" specified not found in $PWD ..."
@@ -4447,7 +4446,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
             note "cd into -Folder \"${MY_FOLDER}\" specified ..."
             cd "${MY_FOLDER}"
             note "Now at $PWD "
-         fi      
+         fi
 
          if [ -z "${MY_FILE}" ]; then  # not filled:
             fatal "No -file specified ..."
@@ -4471,7 +4470,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
    ### 49a. Docker RUN_CONSUL
    if [ "${RUN_CONSUL}" = true ]; then  # -Consul
 
-      # See https://learn.hashicorp.com/tutorials/consul/docker-container-agents 
+      # See https://learn.hashicorp.com/tutorials/consul/docker-container-agents
       CONSUL_DOCKER_NAME="docker-badger"
       CONSUL_CLIENT_NODE1_NAME="client-1"
       CONSUL_SERVER_NODE1_NAME="server-1"
@@ -4489,7 +4488,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
          # 79399f38f301   consul    "docker-entrypoint.s…"   14 minutes ago   Up 14 minutes   8300-8302/tcp, 8600/tcp, 8301-8302/udp, 0.0.0.0:8500->8500/tcp, 0.0.0.0:8600->8600/udp   docker-badger
       if [[ "${RESPONSE}" == *"${CONSUL_DOCKER_NAME}"* ]]; then  # contains it:
           note "Docker name ${CONSUL_DOCKER_NAME} already running ..."
-      else  
+      else
          note "docker run \"${CONSUL_DOCKER_NAME}\" node \"${CONSUL_SERVER_NODE1_NAME}\" ... "
          docker run -d --name="${CONSUL_DOCKER_NAME}" \
             -p 8500:8500 \
@@ -4497,7 +4496,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
             consul agent -server -ui -node="${CONSUL_SERVER_NODE1_NAME}" \
                -bootstrap-expect=1 -client=0.0.0.0
          # -d = detached mode, meaning the process runs in the background.
-         # If the container already is running, docker start will return 0 
+         # If the container already is running, docker start will return 0
          # If the container EXISTS but is not running, docker start will start it.
       fi
 
@@ -4506,7 +4505,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
       if [ ! -d "/consul/config" ]; then
          error "/consul/config not found"
          # exit 9
-      else 
+      else
          note "$( ls -al /consul/config )"
       fi
 
@@ -4516,8 +4515,8 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
          # Node       Address         Status    Type    Build  Protocol  DC   Segment
          # server-1  172.17.0.2:8301  alive     server  1.4.4  2         dc1  <all>
       # TODO: Capture CONSUL_SERVER_NODE1_IP
-         # docker: Error response from daemon: Conflict. The container name "/docker-badger" is already in use by container 
-         # "79399f38f301ea20ac95c4e10c4074cf16c69b1cf04e996d12454a69cfb989df". 
+         # docker: Error response from daemon: Conflict. The container name "/docker-badger" is already in use by container
+         # "79399f38f301ea20ac95c4e10c4074cf16c69b1cf04e996d12454a69cfb989df".
          # You have to remove (or rename) that container to be able to reuse that name.
       export CONSUL_SERVER_NODE1_IP="172.17.0.2"
 
@@ -4530,7 +4529,7 @@ echo "DEBUGGING";exit
       docker run --name="${CONSUL_CLIENT_NODE1_NAME}" \
          consul agent -node="${CONSUL_CLIENT_NODE1_NAME}" -join="${CONSUL_SERVER_NODE1_IP}"
 
-      note "docker exec ${"${CONSUL_DOCKER_NAME}"} client members ... "
+      note "docker exec $\"${CONSUL_DOCKER_NAME}\" client members ... "
       docker exec "${CONSUL_DOCKER_NAME}" consul members
          # Node      Address          Status  Type    Build  Protocol  DC   Segment
          # server-1  172.17.0.2:8301  alive   server  1.4.3  2         dc1  <all>
@@ -4554,7 +4553,7 @@ echo "DEBUGGING";exit
          -c "echo '{\"service\": {\"name\": \"counting\", \"tags\": [\"go\"], \"port\": 9001}}' \
          >> /consul/config/counting.json"
 
-      # Since the Consul client does not automatically detect changes in the configuration directory, 
+      # Since the Consul client does not automatically detect changes in the configuration directory,
       note "Issue a reload command for the same \"{CONSUL_SVC2_NAME}\" container ..."
       docker exec "${CONSUL_SVC2_NAME}" consul reload
          # RESPONSE: Configuration reload triggered
@@ -4578,7 +4577,7 @@ echo "DEBUGGING 2";exit
 
    ### 49b. Docker RUN_EGGPLANT or container
    if [ "${RUN_EGGPLANT}" = true ]; then  # -O
-      # Connect target browser to Eggplant license server: 
+      # Connect target browser to Eggplant license server:
       if [ -z "${EGGPLANT_USERNAME}" ]; then
          echo "EGGPLANT_USERNAME=${EGGPLANT_USERNAME}"
       fi
@@ -4595,7 +4594,7 @@ echo "DEBUGGING 2";exit
 
       # ALT: EGGPLANT_SUT_IP=docker inspect -f "{{ .NetworkSettings.Networks.bridge.IPAddress }}" "${BROWSER_HOSTNAME}"
       EGGPLANT_SUT_IP=$( ipconfig getifaddr en0 )  # "192.168.1.10"
-      EGGPLANT_SUT_PORT="9001"  # for chrome, 9002 for firefox, 9003 for opera 
+      EGGPLANT_SUT_PORT="9001"  # for chrome, 9002 for firefox, 9003 for opera
 
       note "EGGPLANT_SUT_IP=${EGGPLANT_SUT_IP}, EGGPLANT_SUT_PORT=${EGGPLANT_SUT_PORT}"
 
@@ -4634,7 +4633,7 @@ echo "DEBUGGING 2";exit
          note "docker ps -a -f status=running ..."
          note "$DOCKER_CONTAINERS_RUNNING"
          if [ "$DELETE_CONTAINER_AFTER" = true ]; then  # -D
-            h2 "Stopping all docker containers:"
+            header "Stopping all docker containers:"
             docker stop "${DOCKER_CONTAINERS_RUNNING}"
                # –time/-t=1 is grace period seconds to wait before stopping the container.
 
@@ -4649,7 +4648,7 @@ echo "DEBUGGING 2";exit
       if [[ "${DOCKER_PS_RUNNING}" == *"${DOCKER_PS_NAME}"* ]]; then  # contains text
          note "Docker ps image \"${DOCKER_IMAGE_FILE}\" as -name \"${DOCKER_PS_NAME}\" already running ..."
       else
-         h2 "docker run image \"${DOCKER_IMAGE_FILE}\" as -name=\"${DOCKER_PS_NAME}\" ..."
+         header "docker run image \"${DOCKER_IMAGE_FILE}\" as -name=\"${DOCKER_PS_NAME}\" ..."
          docker run --cap-add=IPC_LOCK -d --name="${DOCKER_PS_NAME}"  "${DOCKER_IMAGE_FILE}"
             # --cap-add=IPC_LOCK (mlock) prevents sensitive values in memory from being swapped to disk.
       fi
@@ -4661,7 +4660,7 @@ echo "DEBUGGING 2";exit
       open "http://${APP1_HOST}:${APP1_PORT}/${APP1_FOLDER}"
       # To list ports listening: sudo lsof | grep localhost
 #   else
-#      curl -s -I -X POST http://localhost:8000/ 
+#      curl -s -I -X POST http://localhost:8000/
 #      curl -s       POST http://localhost:8000/ | head -n 10  # first 10 lines
    fi
 
@@ -4676,13 +4675,13 @@ if [ "${UPDATE_GITHUB}" = true ]; then  # -u
    if [ "${DOWNLOAD_INSTALL}" = true ]; then  # -I & -U
       if [ "${PACKAGE_MANAGER}" = "brew" ]; then
          if ! brew ls --versions git-secrets >/dev/null; then  # command not found, so:
-            h2 "Brew installing git-secrets ..."
+            header "Brew installing git-secrets ..."
             brew install git-secrets
                #  /usr/local/Cellar/git-secrets/1.3.0: 8 files, 65.7KB
          else  # installed already:
             if [ "${UPDATE_PKGS}" = true ]; then
                note "Existing: $( brew ls --versions git-secrets )"  # 1.3.0
-               h2 "Brew upgrading git-secrets ..."
+               header "Brew upgrading git-secrets ..."
                brew upgrade git-secrets
             fi
          fi
@@ -4690,8 +4689,8 @@ if [ "${UPDATE_GITHUB}" = true ]; then  # -u
       fi
    fi
 
-   h2 "Install Git hooks to current repo ..."
-   if [ ! -d ".git" ]; then 
+   header "Install Git hooks to current repo ..."
+   if [ ! -d ".git" ]; then
       error ".git folder not found. This is not a Git repo ..."
    else
       if [ -f ".git/hooks/commit-msg" ]; then
@@ -4702,9 +4701,9 @@ if [ "${UPDATE_GITHUB}" = true ]; then  # -u
          git secrets --install
             # ✓ Installed commit-msg hook to .git/hooks/commit-msg
             # ✓ Installed pre-commit hook to .git/hooks/pre-commit
-            # ✓ Installed prepare-commit-msg hook to .git/hooks/prepare-commit-msg         
+            # ✓ Installed prepare-commit-msg hook to .git/hooks/prepare-commit-msg
       fi
-      
+
       if [ "${USE_AWS_CLOUD}" = true ]; then   # -w
          note "git secrets --register-aws"
          git secrets --register-aws
@@ -4722,11 +4721,11 @@ fi   # UPDATE_GITHUB
 ### 50. REMOVE_GITHUB_AFTER folder after run
 # See https://wilsonmar.github.io/mac-setup/#RemoveGitHub
 if [ "$REMOVE_GITHUB_AFTER" = true ]; then  # -C
-   h2 "Delete cloned GitHub at end ..."
+   header "Delete cloned GitHub at end ..."
    Delete_GitHub_clone    # defined above in this file.
 
    if [ "${RUN_PYTHON}" = true ]; then  # -python
-      h2 "Remove files in ~/temp folder ..."
+      header "Remove files in ~/temp folder ..."
       rm bandit.console.log
       rm bandit.err.log
       rm pylint.console.log
@@ -4741,10 +4740,10 @@ if [ "${KEEP_PROCESSES}" = false ]; then  # -K
 
    if [ "${NODE_INSTALL}" = true ]; then  # -js
       if [ -n "${MONGO_PSID}" ]; then  # not found
-         h2 "Kill_process ${MONGO_PSID} ..."
+         header "Kill_process ${MONGO_PSID} ..."
          Kill_process "${MONGO_PSID}"  # invoking function above.
       fi
-   fi 
+   fi
 fi
 
 
@@ -4756,7 +4755,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
       if [ -z "${RESPONSE}" ]; then
          note "docker rmi -f ${RESPONSE} ... "
          docker rmi -f "${RESPONSE}"
-      fi      
+      fi
 
       Stop_Docker   # function defined in this file above.
    fi
@@ -4768,11 +4767,11 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
 
       # TODO: if docker-compose.yml available:
       if [ "${RUN_EGGPLANT}" = true ]; then  # -O
-         h2 "docker-compose down containers ..."
+         header "docker-compose down containers ..."
          docker-compose -f "docker-compose.yml" down
       else
          # https://www.thegeekdiary.com/how-to-list-start-stop-delete-docker-containers/
-         h2 "Deleting active containers ..."
+         header "Deleting active containers ..."
 
          # CONTAINER ID   IMAGE     COMMAND                  CREATED              STATUS              PORTS      NAMES
          # 9a9f5af3ee7a   vault     "docker-entrypoint.s…"   About a minute ago   Up About a minute   8200/tcp   dev-vault
@@ -4790,7 +4789,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
             # CONTAINER ID   IMAGE     COMMAND                  CREATED        STATUS                   PORTS      NAMES
             # 32114f5674e4   vault     "docker-entrypoint.s…"   5 hours ago    Up 5 hours               8200/tcp   dev1
             # 36edbff2d6eb   vault     "docker-entrypoint.s…"   14 hours ago   Exited (0) 6 hours ago              naughty_chatterjee
-         
+
          note "Stopping all docker containers:"
          docker stop "${DOCKER_CONTAINERS_RUNNING}"
             # –time/-t=1 is grace period seconds to wait before stopping the container.
@@ -4805,19 +4804,19 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
    # See https://wilsonmar.github.io/mac-setup/#RemoveImages
    if [ "${REMOVE_DOCKER_IMAGES}" = true ]; then  # -M
 
-      h2 "docker system df  ..."
+      header "docker system df  ..."
       note "$( docker system df )"
          # TYPE           TOTAL       ACTIVE      SIZE        RECLAIMABLE
          # Images         2           2           356.4MB     0B (0%)
          # Containers     6           0           460B        460B (100%)
          # Local Volumes  0           0           0B          0B (0%)
-     
+
       DOCKER_IMAGES="$( docker images -a -q )"
       if [ -n "${DOCKER_IMAGES}" ]; then  # variable is NOT empty
-         h2 "Removing all Docker images ..."
+         header "Removing all Docker images ..."
          docker rmi "$( docker images -a -q )"
 
-         h2 "docker image prune -all ..."  # https://docs.docker.com/config/pruning/
+         header "docker image prune -all ..."  # https://docs.docker.com/config/pruning/
          y | docker image prune -a
             # all stopped containers
             # all volumes not used by at least one container
@@ -4828,7 +4827,7 @@ if [ "${USE_DOCKER}" = true ]; then   # -k
    fi
 
    if [ "${RUN_VERBOSE}" = true ]; then
-      h2 "At end of run: docker images -a ..."
+      header "At end of run: docker images -a ..."
       note "$( docker images -a )"
    fi
 fi    # USE_DOCKER

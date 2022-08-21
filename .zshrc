@@ -75,8 +75,15 @@ fi
 # To avoid command line error (in .zshrc): command not found: complete
 autoload bashcompinit
 bashcompinit
-autoload -Uz compinit
-compinit
+
+# See https://docs.brew.sh/Shell-Completio for details
+if type brew &>/dev/null
+then
+   chmod -R go-w "$(brew --prefix)/share"
+   FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"
+   autoload -Uz compinit
+   compinit
+fi
 
 # Add `killall` tab completion for common apps:
 COMMON_APPS="Contacts Calendar Dock Finder Mail Safari iTunes SystemUIServer Terminal Twitter"
