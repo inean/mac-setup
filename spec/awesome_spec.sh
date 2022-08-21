@@ -2,7 +2,8 @@
 # shellcheck disable=SC2154
 
 Describe 'Run repo_script()'
-    Include ./lib
+    Include lib/awesome.sh
+
     It 'outputs git_user, repo_name, script_name, repo_link with shinokada/gitstart '
         When call repo_script shinokada/gitstart
         The value "$git_user" should eq 'shinokada'
