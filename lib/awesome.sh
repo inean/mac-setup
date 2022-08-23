@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 
 # Find repo name and script name from
 # shinokada/gitstart

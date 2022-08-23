@@ -2,60 +2,62 @@
 # gengetoptions is released under CC0
 # https://creativecommons.org/publicdomain/zero/1.0/
 
-set -euf
+set -euf -o pipefail
 
 VERSION="VERSION" # @VAR
 URL="URL" # @VAR
 LICENSE="LICENSE" # @VAR
 
+IFS="\n\t"
 SHELLCHECK="shell=sh disable=SC2004,SC2034,SC2145,SC2194"
 
 [ "${ZSH_VERSION:-}" ] && setopt shwordsplit
 
-outlibs() {
-	# @OUTPUT-BEGIN
-	cat lib/awesome.sh # @INCLUDE-FILE
-	# @OUTPUT-END
+# Add Here common lib functions
+cat lib/awesome.sh  # @SOURCE-FILE
+cat lib/banner.sh   # @SOURCE-FILE
+
+# Add Here Steps  
+number() { case $OPTARG in (*[!0-9]*) return 1; esac; }
+
+# @getoptions
+parser_definition() {
+	setup   REST plus:true help:usage abbr:true -- \
+		"Usage: macconfig [options...] [arguments...]" ''
+	msg -- 'Configure Mac stations in an opinionated way 🤪' ''
+	msg -- 'Script Options:'
+	flag    FLAG_A  -a                                        -- "message a"
+	flag    FLAG_B  -b                                        -- "message b"
+	flag    FLAG_F  -f +f --{no-}flag                         -- "expands to --flag and --no-flag"
+	flag    FLAG_W        --with{out}-flag                    -- "expands to ---with-flag and --without-flag"
+  msg -- ''
+
+  msg -- 'Customization Steps'
+	flag    VERBOSE -v    --verbose   counter:true init:=0    -- "e.g. -vvv is verbose level 3"
+	param   PARAM   -p    --param     pattern:"foo | bar"     -- "accepts --param value / --param=value"
+	param   NUMBER  -n    --number    validate:number         -- "accepts only a number value"
+	option  OPTION  -o    --option    on:"default"            -- "accepts -ovalue / --option=value"
+	disp    :usage  -h    --help
+	disp    VERSION       --version
 }
+# @end
 
-quote() {
-	q="$2'" r=''
-	while [ "$q" ]; do r="$r${q%%\'*}'\''" && q=${q#*\'}; done
-	q="'${r%????}'" && q=${q#\'\'} && q=${q%\'\'}
-	eval "$1=\${q:-\"''\"}"
-}
-
-usage() {
-	echo 'Usage: eval "$(macconfig <definition> [<parser|-> [arguments]...]) exit 1"'
-}
-
-info() {
-	echo "getoptions $VERSION ($URL)"
-	echo "License: $LICENSE"
-}
-
-case ${1:-} in
-	'') [ -t 1 ] && info && exit 0;;
-	-v | --version) echo "$VERSION" && exit 0 ;;
-	-h | --help) usage && exit 0 ;;
-	-?*) info && usage && exit 1 ;;
-esac
-
-if [ "${KSH_VERSION:-}" ] || [ "${ZSH_VERSION:-}" ]; then
-	outlibs 'print' '-r' '--'
-else
-	outlibs 'printf' '%s\n'
-fi
-
-[ "${1:-}" = - ] && exit 0
-for i; do quote i "$i"; set -- "$@" "$i"; shift; done
-echo "eval \"\$(getoptions $*)\""
-eval "$(getoptions parser_definition parse "$0")"
+# @gengetoptions parser -i parser_definition parse
+#
+#     INSERTED HERE
+#
+# @end
 
 parse "$@"
 eval "set -- $REST"
 
-[ "${1:---}" = "--" ] && usage && exit 1
-command=$1
-shift
-"do_$command" "$@"
+
+echo "FLAG_A: $FLAG_A"
+echo "FLAG_B: $FLAG_B"
+echo "FLAG_F: $FLAG_F"
+echo "FLAG_W: $FLAG_W"
+echo "VERBOSE: $VERBOSE"
+echo "PARAM: $PARAM"
+echo "NUMBER: $NUMBER"
+echo "OPTION: $OPTION"
+echo "VERSION: $VERSION"

@@ -51,4 +51,5 @@ uninstall:
 
 bin/macconfig: src/build.sh
 	src/build.sh < src/macconfig > bin/macconfig
+	gengetoptions embed --overwrite bin/macconfig
 	chmod +x bin/macconfig
