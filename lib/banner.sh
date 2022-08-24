@@ -1,105 +1,161 @@
-#!/usr/bin/env bash
-
-# how to use it
-# printf "${BOLD}%s${RESET}\n" 'BOLD'
-# printf "${UNDERLINE}%s${RESET}\n" 'UNDERLINE'
-# printf "${ITALIC}%s${RESET}\n" 'ITALIC'
-# printf "${UNDERLINE}${ITALIC}%s${RESET}\n" 'Underline ITALIC'
-
 # shellcheck disable=SC2034
-ESC=$(printf '\033')
-RESET="${ESC}[0m"
+escape="\033["
+reset=""
 
-BOLD="${ESC}[1m"
-FAINT="${ESC}[2m"
-ITALIC="${ESC}[3m"
-UNDERLINE="${ESC}[4m"
-BLINK="${ESC}[5m"
-FAST_BLINK="${ESC}[6m"
-REVERSE="${ESC}[7m"
-CONCEAL="${ESC}[8m"
-STRIKE="${ESC}[9m"
+# Text color
+tc_default="39"
+tc_black="30"
+tc_red="31"
+tc_green="32"
+tc_yellow="33"
+tc_blue="34"
+tc_purple="35"
+tc_cyan="36"
+tc_white="37"
+tc_bright_red="91"
+tc_bright_green="92"
+tc_bright_yellow="93"
+tc_bright_blue="94"
+tc_bright_purple="95"
+tc_bright_cyan="96"
+tc_bright_white="97"
 
-GOTHIC="${ESC}[20m"
-DOUBLE_UNDERLINE="${ESC}[21m"
-NORMAL="${ESC}[22m"
-NO_ITALIC="${ESC}[23m"
-NO_UNDERLINE="${ESC}[24m"
-NO_BLINK="${ESC}[25m"
-NO_REVERSE="${ESC}[27m"
-NO_CONCEAL="${ESC}[28m"
-NO_STRIKE="${ESC}[29m"
+# Text background color
+bg_default="49"
+bg_black="40"
+bg_red="41"
+bg_green="42"
+bg_yellow="43"
+bg_blue="44"
+bg_purple="45"
+bg_cyan="46"
+bg_white="47"
+bg_bright_black="100"
+bg_bright_red="101"
+bg_bright_green="102"
+bg_bright_yellow="103"
+bg_bright_blue="104"
+bg_bright_purple="105"
+bg_bright_cyan="106"
+bg_bright_white="107"
 
-BLACK="${ESC}[30m"
-RED="${ESC}[31m"
-GREEN="${ESC}[32m"
-YELLOW="${ESC}[33m"
-BLUE="${ESC}[34m"
-MAGENTA="${ESC}[35m"
-CYAN="${ESC}[36m"
-WHITE="${ESC}[37m"
-DEFAULT="${ESC}[39m"
+# Emphasis
+emphasis_default="0"
+emphasis_bold="1"
+emphasis_italics="3"
+emphasis_underline="4"
+emphasis_blink="5"
+emphasis_reverse="7"
 
-BG_BLACK="${ESC}[40m"
-BG_RED="${ESC}[41m"
-BG_GREEN="${ESC}[42m"
-BG_YELLOW="${ESC}[43m"
-BG_BLUE="${ESC}[44m"
-BG_MAGENTA="${ESC}[45m"
-BG_CYAN="${ESC}[46m"
-BG_WHITE="${ESC}[47m"
-BG_DEFAULT="${ESC}[49m"
-
-# Usage _parse_color "<color_name>"
-function _parse_color() {
-    case ${2} in
-    black)
-        color=0
-        ;;
-    red)
-        color=1
-        ;;
-    green)
-        color=2
-        ;;
-    yellow)
-        color=3
-        ;;
-    blue)
-        color=4
-        ;;
-    magenta)
-        color=5
-        ;;
-    cyan)
-        color=6
-        ;;
-    white)
-        color=7
-        ;;
-    *)
-        echo "color is not set"
-        exit 1
-        ;;
-    esac
+# Solve var indirect expansion in a portable way
+function __expand() {
+  local ref="$1_$2"
+  if [ "${ZSH_VERSION:-}" ]; then
+    # shellcheck disable=2296
+    printf "%q" "${(P)ref}"
+  else
+    printf "%q" "${!ref}"
+  fi
 }
 
+# log [message] [-biuln] [-c color] [-k background-color]
+# options
+#   -o        text is normal
+#   -b        text is bold
+#   -i        text is italic
+#   -u        text is underlined
+#   -l        text blinks
+#   -r          reverse formatting
+#   -n        do NOT add new line ("\n") after message
+#   -c  color
+#         format text with specified named color. See below for available colors.
+#   -k  background-color
+#         format text with background-color of specified name. See below for available colors.
+function _log() {
+  local output=""
+  typeset -a codes=()
+  typeset -a formatting=()
+
+  # check if message
+  test -n "$1" || {
+    echo
+    return
+  }
+  # Extract message
+  message=$1
+  shift
+  # parse options
+  color=""
+  background_color=""
+  line_break="\n"
+
+  while getopts ":c:k:obiunlr" option; do
+    case $option in
+    c)
+      color="${OPTARG}"
+      ;;
+    k)
+      background_color="${OPTARG}"
+      ;;
+    o)
+      formatting+=("default")
+      ;;
+    b)
+      formatting+=("bold")
+      ;;
+    i)
+      formatting+=("italics")
+      ;;
+    u)
+      formatting+=("underline")
+      ;;
+    l)
+      formatting+=("blink")
+      ;;
+    r)
+      formatting+=("reverse")
+      ;;
+    n)
+      line_break=""
+      ;;
+    *)
+      exit 1
+      ;;
+    esac
+  done
+  # build output
+  for format in "${formatting[@]}"; do
+    codes+=("$(__expand "emphasis" "$format")")
+  done
+
+  if [[ "$color" != "" ]]; then
+    codes+=("$(__expand "tc" "$color")")
+  fi
+  if [[ "$background_color" != "" ]]; then
+    codes+=("$(__expand "bg" "$background_color")")
+  fi
+  if [[ "${#codes[@]}" -gt "0" ]]; then
+    reset="${escape}0m"
+    for i in "${codes[@]}"; do
+      output="${output}${i};"
+    done
+    # Remove last ';' and add 'm'
+    output="${escape}${output%";"}m"
+  fi
+  # return format
+  printf "${output}%s${reset}${line_break}" "$message"
+}
 # Usage: banner "my title" "my_color" "*"
 function banner {
-    local msg="${3} ${1} ${3}"
-    local edge; edge=$(echo "${msg}" | sed "s/./${3}/g")
-    local color; color=$(_parse_color "${2}")
-
-    tput setaf ${color}
-    tput bold
-    echo "${edge}"
-    echo "${msg}"
-    echo "${edge}"
+  local msge="${3} ${1} ${3}"
+  local edge=""
+  # shellcheck disable=SC2001
+  edge=$(echo "${msge}" | sed "s/./${3}/g")
+  _log "$edge" -c "$2"
+  _log "$msge" -c "$2"
+  _log "$edge" -c "$2"
 }
 # Usage header "my header" "my_color"
 function header {
-    local color; color=$(_parse_color "${2}")
-    tput setaf ${color}
-    tput bold
-    echo "${1}"
+  _log "$1" -c "$2"
 }

@@ -1,38 +1,48 @@
-#shellcheck shell=sh
-# shellcheck disable=SC2154
+#shellcheck disable=SC2154,SC2276
 
 Describe 'banner.sh'
+  Include "lib/banner.sh"
 
-  Include lib/banner.sh
-
-  Describe 'Check message function. Color testing is mocked'
-  # Stub to prevent banner to use colors
-  tput() { :; }
-
-  Before 'prepare'
-  prepare() {
-    msg='Hello World'
-    color='red'
-    decorator='*'
-  }
-  repeat() {
-    # Spaces used by banner test
-    local spacers=4
-
-    local start=1
-    local end=${1:-80}
-    local str="${2:-=}"
-    for _ in $(seq $start "$((end + spacers))"); do echo "${str}\c"; done
-  }
-    It 'Show a banner'
-      When call banner "$msg" "$color" "$decorator"
-      The lines of stdout should eq 3
-      The line 1 of output should eq "$(repeat "${#msg}" "$decorator")"
+  Describe '_log()'
+    Parameters
+      "Color is Default" ""        "*" ""
+      "Color is Cyan"    "cyan"    "*" "36"
+      "Color is Yellow"  "yellow"  "*" "33"
     End
-    It 'Show a simple banner with no decorators (A header)'
-      When call header "$msg" "$color" "$decorator"
+
+    __banner() {
+      local start=1
+      local end=${1:-80}
+      local str="${3:-=}"
+
+      local result=""
+      for _ in $(seq $start "$((end + 4))"); do
+        result="${result}${str}";
+      done
+      __print "$result" "$2"
+    }
+    __print() {
+      if [[ "$2" == "" ]]; then
+        %= "$1"
+      fi
+      if [[ "$2" != "" ]] && [[ "$3" != "" ]]; then
+        %= "${SHELLSPEC_ESC}[${2};${3}m${1}${SHELLSPEC_ESC}[0m"
+      fi
+      if [[ "$2" != "" ]] || [[ "$3" != "" ]]; then
+        local color="${2:$3}"
+        %= "${SHELLSPEC_ESC}[${color}m${1}${SHELLSPEC_ESC}[0m"
+      fi
+    }
+
+    It 'Show a banner'
+      When call banner "$1" "$2" "$3"
+      The lines of stdout should eq 3
+      The line 1 of stdout should eq "$(__banner "${#1}" "$4" "$3")"
+    End
+    It 'Show a header'
+      When call header "$1" "$2"
       The lines of stdout should eq 1
-      The line 1 of output should eq "$msg"
+      The line 1 of stdout should eq "$(__print "$1" "$4")"
     End
   End
 End
