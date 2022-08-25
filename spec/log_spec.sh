@@ -1,7 +1,7 @@
 #shellcheck disable=SC2154,SC2276
 
-Describe 'banner.sh'
-  Include "lib/banner.sh"
+Describe 'log.sh'
+  Include "lib/log.sh"
 
   Describe '_log()'
     Parameters
@@ -19,9 +19,9 @@ Describe 'banner.sh'
       for _ in $(seq $start "$((end + 4))"); do
         result="${result}${str}";
       done
-      __print "$result" "$2"
+      __log "$result" "$2"
     }
-    __print() {
+    __log() {
       if [[ "$2" == "" ]]; then
         %= "$1"
       fi
@@ -42,7 +42,7 @@ Describe 'banner.sh'
     It 'Show a header'
       When call header "$1" "$2"
       The lines of stdout should eq 1
-      The line 1 of stdout should eq "$(__print "$1" "$4")"
+      The line 1 of stdout should eq "$(__log "$1" "$4")"
     End
   End
 End
