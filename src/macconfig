@@ -15,7 +15,7 @@ SHELLCHECK="shell=sh disable=SC2004,SC2034,SC2145,SC2194"
 
 # Add Here common lib functions
 cat lib/awesome.sh  # @SOURCE-FILE
-cat lib/banner.sh   # @SOURCE-FILE
+cat lib/log.sh   # @SOURCE-FILE
 
 # Add Here Steps  
 number() { case $OPTARG in (*[!0-9]*) return 1; esac; }

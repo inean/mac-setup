@@ -1,4 +1,9 @@
 # shellcheck disable=SC2034
+
+# public variables
+
+LOG_VERBOSE="${LOG_VERBOSE:=1}" # Verbose counter (aka -vvv counter is 3)
+
 escape="\033["
 reset=""
 
@@ -42,6 +47,7 @@ bg_bright_white="107"
 # Emphasis
 emphasis_default="0"
 emphasis_bold="1"
+emphasis_dimming="2"
 emphasis_italics="3"
 emphasis_underline="4"
 emphasis_blink="5"
@@ -61,6 +67,7 @@ function __expand() {
 # log [message] [-biuln] [-c color] [-k background-color]
 # options
 #   -o        text is normal
+#   -d        text is dimming
 #   -b        text is bold
 #   -i        text is italic
 #   -u        text is underlined
@@ -89,7 +96,7 @@ function _log() {
   background_color=""
   line_break="\n"
 
-  while getopts ":c:k:obiunlr" option; do
+  while getopts ":c:k:obdiunlr" option; do
     case $option in
     c)
       color="${OPTARG}"
@@ -102,6 +109,9 @@ function _log() {
       ;;
     b)
       formatting+=("bold")
+      ;;
+    d)
+      formatting+=("dimming")
       ;;
     i)
       formatting+=("italics")
@@ -151,11 +161,54 @@ function banner {
   local edge=""
   # shellcheck disable=SC2001
   edge=$(echo "${msge}" | sed "s/./${3}/g")
-  _log "$edge" -c "$2"
-  _log "$msge" -c "$2"
-  _log "$edge" -c "$2"
+  if [[ ${LOG_VERBOSE} -gt 0 ]]; then
+    _log "$edge" -c "$2"
+    _log "$msge" -c "$2"
+    _log "$edge" -c "$2"
+  fi
 }
 # Usage header "my header" "my_color"
 function header {
-  _log "$1" -c "$2"
+  if [[ ${LOG_VERBOSE} -gt 0 ]]; then
+    _log "$1" -c "$2" -u
+  fi
+}
+function debug() {   # output when -vvv is expressed
+  if [[ ${LOG_VERBOSE} -gt 2 ]]; then
+    _log "🐛 $*" -d
+  fi
+}
+function info() {   # output on every run when -vv is expressed
+  if [[ ${LOG_VERBOSE} -gt 1 ]]; then
+    _log "➜ $*" -d
+  fi
+}
+function success() {
+  if [[ ${LOG_VERBOSE} -gt 0 ]]; then
+    _log "✔ $*" -c green -d
+  fi
+}
+function warning() {  # &#9758; or &#9755;
+  if [[ ${LOG_VERBOSE} -gt 0 ]]; then
+    _log "☞ $*" -c yellow -d
+  fi
+}
+function error() {    # &#9747;
+  if [[ ${LOG_VERBOSE} -gt 0 ]]; then
+    _log "✖ $*" -c red -d
+  fi
+  return 1
+}
+function fatal() {  # Skull: &#9760;  # Star: &starf; &#9733; U+02606  # Toxic: &#9762;
+  if [[ ${LOG_VERBOSE} -gt 0 ]]; then
+    _log "☢ $*" -c red -b
+  fi
+  return 1
+}
+function abort() {
+   # Function: Exit with error.
+  if [[ ${LOG_VERBOSE} -gt 1 ]]; then
+    fatal "${*:-"Exiting abnormally"}"
+  fi
+  exit 1
 }
