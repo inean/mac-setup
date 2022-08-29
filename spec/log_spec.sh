@@ -20,7 +20,10 @@ Describe 'log.sh'
       fi
       %= "${SHELLSPEC_ESC}[${2}m${1}${SHELLSPEC_ESC}[0m"
     }
-
+    __missing_method() {
+      not_yet_implemented
+      return $?
+    }
   Describe '_log()'
     Parameters
       "Default"              ""           ""
@@ -94,6 +97,13 @@ Describe 'log.sh'
       The line 1 of stdout should eq "$(__log "✖ this is an error message" "2;31")"
       The variable LOG_VERBOSE should equal 1
       The status should be failure
+    End
+  End
+  Describe "Developer errors"
+    It 'Not yet implemented'
+      When run __missing_method
+      The line 1 of stdout should eq "$(__log "☢ __missing_method" "1;31")"
+      The status should eq 1
     End
   End
 End

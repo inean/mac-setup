@@ -63,6 +63,17 @@ function __expand() {
     printf "%q" "${!ref}"
   fi
 }
+function __caller_func() {
+  currentShell=$(ps -p $$ | awk "NR==2" | awk '{ print $4 }' | tr -d '-')
+  if [[ ${currentShell##*/} == 'zsh' ]]; then
+    printf "%s" "${funcstack[3]}"
+  fi
+  if [[ ${currentShell##*/} == 'bash' ]]; then
+    printf "%s" "${FUNCNAME[2]}"
+  fi
+  # try shomething so script fails if unset is active
+    printf "%s" "${FUNCNAME[2]}"
+}
 
 # log [message] [-biuln] [-c color] [-k background-color]
 # options
@@ -207,8 +218,18 @@ function fatal() {  # Skull: &#9760;  # Star: &starf; &#9733; U+02606  # Toxic: 
 }
 function abort() {
    # Function: Exit with error.
-  if [[ ${LOG_VERBOSE} -gt 1 ]]; then
+  if [[ ${LOG_VERBOSE} -gt 0 ]]; then
     fatal "${*:-"Exiting abnormally"}"
   fi
   exit 1
+}
+function not_yet_implemented() {
+  abort "$(__caller_func "Not yet implemented")"
+}
+function assert_equal() {
+  [[ $# -eq 2 ]]    || abort "$(__caller_func "2 Args expected")"
+  [[ "$1" = "$2" ]] || abort "$(__caller_func "\'$1\' Differs from \'$2\'")"
+}
+function assert_not_empty() {
+  [[ $# -eq 1 ]]    || abort "$(__caller_func "Missing or empty arg")"
 }
