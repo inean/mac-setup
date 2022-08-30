@@ -20,22 +20,22 @@ Describe 'log.sh'
       fi
       %= "${SHELLSPEC_ESC}[${2}m${1}${SHELLSPEC_ESC}[0m"
     }
-    __missing_method() {
-      not_yet_implemented
+    __pending_method() {
+        not_yet_implemented
       return $?
     }
   Describe '_log()'
     Parameters
-      "Default"              ""           ""
-      "Default without line" "-n"         ""
-      "Color is Yellow"      "-c yellow"  "33"
-      "Color is Green"       "-c green"   "32"
-      "Background is Yellow" "-k yellow"  "43"
-      "Background is Green"  "-k green"   "42"
-      "Format is underline"  "-u"         "4"
-      "Format is Blink"      "-l"         "5"
+      "message"                        ""           ""
+      "message without return line"    "-n"         ""
+      "message yellow"                 "-c yellow"  "33"
+      "message green"                  "-c green"   "32"
+      "bessage with background yellow" "-k yellow"  "43"
+      "message with background green"  "-k green"   "42"
+      "message underlined"             "-u"         "4"
+      "message blinking"               "-l"         "5"
     End
-    It 'Call _log() with basic arguments'
+    Example "Show log ${1}"
       #shellcheck disable=SC2086
       When call _log "${1}" ${2}
       The stdout should eq "$(__log "$1" "$3")"
@@ -44,11 +44,11 @@ Describe 'log.sh'
   Describe '_log()'
     # log function format is emphasis, foreground color, background color
     Parameters
-      "Color 'red', Bg 'Black', 'No Emphasis'."  "-c red -k black"     "31;40"
-      "Color 'red', Bg 'Black', 'Italic'."       "-c red -k black -i"  "3;31;40"
-      "Bg 'Green', 'Underlined'."                "-k green -u"         "4;42"
+      "message in red and black bacground"            "-c red -k black"     "31;40"
+      "message in red, background black and italic"   "-c red -k black -i"  "3;31;40"
+      "messsage with background green and underlined" "-k green -u"         "4;42"
     End
-    It 'Call _log() with variable arguments'
+    Example "Show log $1"
       #shellcheck disable=SC2086
       When call _log "${1}" ${2}
       The stdout should eq "$(__log "$1" "$3")"
@@ -58,7 +58,7 @@ Describe 'log.sh'
     Parameters
       "Color is Yellow" "yellow" "*" "33"
     End
-    It 'Shows a banner'
+    Example 'Show banner "Color is Yellow" in yellow color'
       When call banner "$1" "$2" "$3"
       The lines of stdout should eq 3
       The line 1 of stdout should eq "$(__banner "${#1}" "$4" "$3")"
@@ -68,17 +68,17 @@ Describe 'log.sh'
     Parameters
       "Color is Yellow" "yellow" "*" "4;33"
     End
-    It 'Shows a header'
+    Example 'Show header "Color is Yellow" in yellow color'
       When call header "$1" "$2"
       The lines of stdout should eq 1
       The stdout should eq "$(__log "$1" "$4")"
     End
   End
   Describe 'info()'
-    It 'Shows an info message'
+    Example 'Show info message "This is an info message"'
       BeforeRun 'LOG_VERBOSE=2'
-      When run info "this is an info message"
-      The line 1 of stdout should eq "$(__log "➜ this is an info message" "2")"
+      When run info "This is an info message"
+      The line 1 of stdout should eq "$(__log "➜ This is an info message" "2")"
     End
     It 'Dont show anything if verbose is set to Quiet LOG_VERBOSE=0'
       When call info "this is an info message"
@@ -87,22 +87,22 @@ Describe 'log.sh'
     End
   End
   Describe 'error()'
+    Example 'Show error message "This is an error message"'
+      When run error "This is an error message"
+      The line 1 of stdout should eq "$(__log "✖ This is an error message" "2;31")"
+      The variable LOG_VERBOSE should equal 1
+      The status should be failure
+    End
     It 'Dont show anything if verbose is set to Quiet LOG_VERBOSE=0'
       BeforeRun 'LOG_VERBOSE=0'
       When run error "this is an error message"
       The status should be failure
     End
-    It 'Shows an error'
-      When run error "this is an error message"
-      The line 1 of stdout should eq "$(__log "✖ this is an error message" "2;31")"
-      The variable LOG_VERBOSE should equal 1
-      The status should be failure
-    End
   End
-  Describe "Developer errors"
-    It 'Not yet implemented'
-      When run __missing_method
-      The line 1 of stdout should eq "$(__log "☢ __missing_method" "1;31")"
+  Describe "not_yet_implemented()"
+    Example 'Embed "not_yet_implemented" inside a function'
+      When run __pending_method
+      The line 1 of stdout should eq "$(__log "☢ __pending_method" "1;31")"
       The status should eq 1
     End
   End

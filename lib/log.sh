@@ -233,3 +233,6 @@ function assert_equal() {
 function assert_not_empty() {
   [[ $# -eq 1 ]]    || abort "$(__caller_func "Missing or empty arg")"
 }
+function assert_function_exists() {
+  [[ $(declare -f -F "$1" >/dev/null) ]] || abort "$1 function is undefined"
+}
