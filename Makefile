@@ -3,7 +3,7 @@ BINDIR := $(PREFIX)/bin
 SHAREDIR := $(PREFIX)/share
 SHELL=zsh
 
-.PHONY: build clean check test testall coverage install uninstall help
+.PHONY: build clean check ci test testall coverage install uninstall help
 
 help:
 	@awk '/^#/{c=substr($$0,3);next}c&&/^[[:alpha:]][[:alnum:]_-]+:/{print substr($$1,1,index($$1,":")),c}1{c=0}' $(MAKEFILE_LIST) | column -s: -t
@@ -13,7 +13,7 @@ build: bin/macconfig
 
 ## remove generated files.
 clean:
-	rm -rf bin/macconfig macconfig.tar.gz coverage
+	rm -rf bin/macconfig macconfig.tar.gz coverage .shellspec-quick.log
 
 ## run 'shellcheck' against shell scripts.
 check:
@@ -21,7 +21,11 @@ check:
 
 ## run tests
 test:
-	shellspec
+	$(eval $@_ARGS=--quiet --format d)
+	$(eval $@_CACHE=.shellspec-quick.log)
+	$(if $(shell find . -type f -name '*sh' -newer $($@_CACHE)),$(shell rm $($@_CACHE)))
+	$(if $(shell find . -name $($@_CACHE)),$(eval $@_ARGS+=--only-failures),$(eval $@_ARGS+=--quick))
+	shellspec $(if $(filter undefined,$(origin SHELLSPEC_ARGS)),$($@_ARGS),$(SHELLSPEC_ARGS))
 
 ## run tests agaist all supported shells.
 testall:
@@ -50,6 +54,7 @@ uninstall:
 	rm -f $(SHAREDIR)/macconfig
 
 bin/macconfig: src/build.sh
+	chmod +x src/build.sh
 	src/build.sh < src/macconfig > bin/macconfig
 	gengetoptions embed --overwrite bin/macconfig
 	chmod +x bin/macconfig

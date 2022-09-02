@@ -1,0 +1,28 @@
+#ENV:
+#  CIRRUS_SHELL: 'zsh'
+
+macos_instance:
+  image: ghcr.io/cirruslabs/macos-monterey-base:latest
+
+build_task:
+  install_script:
+    - | # Install Homebrew formulas
+      brew update
+      brew tap ko1nksm/getoptions
+      brew install getoptions
+  script:
+    - make clean build
+
+test_task:
+  depends_on:
+    - build
+  install_script:
+    - | # Hombrew is already configured with build target
+      brew tap shellspec/shellspec
+      brew install shellspec
+  script:
+    - make test SHELLSPEC_ARGS="--output junit"
+  always:
+    junit_artifacts:
+      path: "**/report/**.xml"
+      format: junit
